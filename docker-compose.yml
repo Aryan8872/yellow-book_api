@@ -1,0 +1,37 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: offernepal-api
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=change_this_to_a_32_character_minimum_random_secret_in_prod!
+      - JWT_REFRESH_SECRET=change_this_to_another_32_character_random_secret!
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+    networks:
+      - offernepal-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: offernepal-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - offernepal-net
+
+volumes:
+  redis-data:
+
+networks:
+  offernepal-net:
+    driver: bridge

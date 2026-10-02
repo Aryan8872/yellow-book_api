@@ -1,0 +1,9 @@
+pnpm:
+  allowedNonApprovedPackages:
+    - prisma
+    - '@prisma/client'
+    - '@prisma/engines'
+    - bcrypt
+    - '@parcel/watcher'
+    - '@scarf/scarf'
+    - unrs-resolver
