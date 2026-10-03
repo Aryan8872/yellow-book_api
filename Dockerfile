@@ -22,7 +22,7 @@ RUN pnpm prisma generate
 RUN rm -f tsconfig.tsbuildinfo && pnpm build
 
 # Verify the build output exists before we proceed
-RUN test -f dist/main.js || (echo "ERROR: dist/main.js not found after build!" && ls -la dist/ && exit 1)
+RUN test -f dist/src/main.js || (echo "ERROR: dist/src/main.js not found after build!" && ls -la dist/ && ls -la dist/src/ && exit 1)
 
 # ── Production image ──────────────────────────────────────────────────────────
 # pnpm uses a virtual store: node_modules/.pnpm/ contains all packages and
@@ -38,4 +38,4 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 
 EXPOSE 3000
-CMD ["node", "dist/main"]
+CMD ["node", "dist/src/main"]
