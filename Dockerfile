@@ -9,6 +9,15 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 # Copy manifests first for layer-cache efficiency
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 
+# Explicitly copy prisma schema + migrations BEFORE install so prisma generate / preinstall hooks see them.
+# This guarantees prisma/migrations exists in the build context inside the image.
+COPY prisma/schema.prisma prisma/migrations ./prisma/
+
+# Debug: print prisma dir to build logs so we can confirm migrations are present at build time.
+RUN echo "=== BUILD CONTEXT: LIST prisma/ ===" \
+    && ls -la prisma || echo "prisma not found in build context" \
+    && echo "=== END prisma listing ==="
+
 # Install all deps (allowBuilds in pnpm-workspace.yaml handles native packages)
 RUN pnpm install --frozen-lockfile
 
