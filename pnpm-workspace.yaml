@@ -1,9 +1,11 @@
-pnpm:
-  allowedNonApprovedPackages:
-    - prisma
-    - '@prisma/client'
-    - '@prisma/engines'
-    - bcrypt
-    - '@parcel/watcher'
-    - '@scarf/scarf'
-    - unrs-resolver
+# pnpm-workspace.yaml
+# Top-level allowBuilds map — this is the CORRECT pnpm v10 syntax.
+# The old "pnpm: allowedNonApprovedPackages" key is NOT recognized by pnpm v10.
+allowBuilds:
+  "@prisma/client": true
+  "@prisma/engines": true
+  "prisma": true
+  "bcrypt": true
+  "@parcel/watcher": true
+  "@scarf/scarf": true
+  "unrs-resolver": true

@@ -84,16 +84,6 @@
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
   },
-  "pnpm": {
-    "allowBuilds": {
-      "@prisma/client": true,
-      "prisma": true,
-      "bcrypt": true,
-      "@parcel/watcher": true,
-      "@scarf/scarf": true,
-      "unrs-resolver": true
-    }
-  },
   "jest": {
     "moduleFileExtensions": [
       "js",
