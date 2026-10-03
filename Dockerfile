@@ -1,8 +1,8 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Native build tools needed for bcrypt, @parcel/watcher, etc.
-RUN apk add --no-cache python3 make g++
+# Native build tools + openssl (Prisma requires libssl on Alpine)
+RUN apk add --no-cache python3 make g++ openssl
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
@@ -30,6 +30,9 @@ RUN test -f dist/src/main.js || (echo "ERROR: dist/src/main.js not found after b
 # the store + symlinks so everything resolves at runtime — no re-install needed.
 FROM node:20-alpine AS production
 WORKDIR /app
+
+# Prisma needs libssl at runtime on Alpine
+RUN apk add --no-cache openssl
 
 COPY package.json ./
 

@@ -17,7 +17,7 @@ datasource db {
 enum UserRole {
   USER
   MERCHANT_STAFF
-  MERCHANT_ADMIN  
+  MERCHANT_ADMIN
   ADMIN
 }
 
@@ -65,34 +65,34 @@ enum OAuthProvider {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  phone        String?  @unique
-  passwordHash String?  @map("password_hash")
+  id           String    @id @default(cuid())
+  email        String    @unique
+  phone        String?   @unique
+  passwordHash String?   @map("password_hash")
   name         String?
-  avatarUrl    String?  @map("avatar_url")
-  role         UserRole @default(USER)
-  isVerified   Boolean  @default(false) @map("is_verified")
-  isActive     Boolean  @default(true) @map("is_active")
-  timezone     String   @default("Asia/Kathmandu")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  avatarUrl    String?   @map("avatar_url")
+  role         UserRole  @default(USER)
+  isVerified   Boolean   @default(false) @map("is_verified")
+  isActive     Boolean   @default(true) @map("is_active")
+  timezone     String    @default("Asia/Kathmandu")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
   deletedAt    DateTime? @map("deleted_at") // Soft delete
 
   // Relations
-  subscription   Subscription?
-  oauthAccounts  OAuthAccount[]
-  redemptions    RedemptionSession[]
-  familyGroup    FamilyGroup?        @relation("FamilyOwner")
-  familyMembership FamilyGroup?      @relation("FamilyMember", fields: [familyGroupId], references: [id])
-  familyGroupId  String?             @map("family_group_id")
-  merchantStaff  MerchantStaff?
-  auditLogs      AuditLog[]          @relation("AuditActor")
+  subscription     Subscription?
+  oauthAccounts    OAuthAccount[]
+  redemptions      RedemptionSession[]
+  familyGroup      FamilyGroup?        @relation("FamilyOwner")
+  familyMembership FamilyGroup?        @relation("FamilyMember", fields: [familyGroupId], references: [id])
+  familyGroupId    String?             @map("family_group_id")
+  merchantStaff    MerchantStaff?
+  auditLogs        AuditLog[]          @relation("AuditActor")
 
-  @@map("users")
   @@index([email])
   @@index([phone])
   @@index([role])
+  @@map("users")
 }
 
 model OAuthAccount {
@@ -113,10 +113,10 @@ model OAuthAccount {
 }
 
 model FamilyGroup {
-  id          String   @id @default(cuid())
-  ownerId     String   @unique @map("owner_id")
-  maxMembers  Int      @default(4) @map("max_members")
-  createdAt   DateTime @default(now()) @map("created_at")
+  id         String   @id @default(cuid())
+  ownerId    String   @unique @map("owner_id")
+  maxMembers Int      @default(4) @map("max_members")
+  createdAt  DateTime @default(now()) @map("created_at")
 
   // Relations
   owner   User   @relation("FamilyOwner", fields: [ownerId], references: [id], onDelete: Cascade)
@@ -145,33 +145,33 @@ model Plan {
 }
 
 model Subscription {
-  id                 String             @id @default(cuid())
-  userId             String             @unique @map("user_id")
-  planId             String             @map("plan_id")
-  status             SubscriptionStatus @default(INACTIVE)
-  pspCustomerId      String?            @map("psp_customer_id")
-  pspSubscriptionId  String?            @map("psp_subscription_id")
-  startedAt          DateTime?          @map("started_at")
-  endsAt             DateTime?          @map("ends_at")
-  cancelledAt        DateTime?          @map("cancelled_at")
-  gracePeriodEndsAt  DateTime?          @map("grace_period_ends_at")
-  createdAt          DateTime           @default(now()) @map("created_at")
-  updatedAt          DateTime           @updatedAt @map("updated_at")
+  id                String             @id @default(cuid())
+  userId            String             @unique @map("user_id")
+  planId            String             @map("plan_id")
+  status            SubscriptionStatus @default(INACTIVE)
+  pspCustomerId     String?            @map("psp_customer_id")
+  pspSubscriptionId String?            @map("psp_subscription_id")
+  startedAt         DateTime?          @map("started_at")
+  endsAt            DateTime?          @map("ends_at")
+  cancelledAt       DateTime?          @map("cancelled_at")
+  gracePeriodEndsAt DateTime?          @map("grace_period_ends_at")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan Plan @relation(fields: [planId], references: [id])
 
-  @@map("subscriptions")
   @@index([status])
   @@index([endsAt])
+  @@map("subscriptions")
 }
 
 model PspWebhookEvent {
   id          String   @id // Use PSP event ID as PK for natural idempotency
-  psp         String   // 'stripe' | 'esewa' | 'khalti'
+  psp         String // 'stripe' | 'esewa' | 'khalti'
   eventType   String   @map("event_type")
-  payload     Json     // Raw webhook payload for auditing
+  payload     Json // Raw webhook payload for auditing
   processedAt DateTime @default(now()) @map("processed_at")
 
   @@map("psp_webhook_events")
@@ -182,52 +182,52 @@ model PspWebhookEvent {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Merchant {
-  id                  String         @id @default(cuid())
-  name                String
-  description         String?
-  logoUrl             String?        @map("logo_url")
-  coverUrl            String?        @map("cover_url")
-  websiteUrl          String?        @map("website_url")
-  status              MerchantStatus @default(PENDING_REVIEW)
-  merchantPinHash     String?        @map("merchant_pin_hash") // 4-digit PIN bcrypt hash
-  registrationNumber  String?        @map("registration_number")
-  vatNumber           String?        @map("vat_number")
-  contactEmail        String?        @map("contact_email")
-  contactPhone        String?        @map("contact_phone")
-  onboardedAt         DateTime?      @map("onboarded_at")
-  createdAt           DateTime       @default(now()) @map("created_at")
-  updatedAt           DateTime       @updatedAt @map("updated_at")
+  id                 String         @id @default(cuid())
+  name               String
+  description        String?
+  logoUrl            String?        @map("logo_url")
+  coverUrl           String?        @map("cover_url")
+  websiteUrl         String?        @map("website_url")
+  status             MerchantStatus @default(PENDING_REVIEW)
+  merchantPinHash    String?        @map("merchant_pin_hash") // 4-digit PIN bcrypt hash
+  registrationNumber String?        @map("registration_number")
+  vatNumber          String?        @map("vat_number")
+  contactEmail       String?        @map("contact_email")
+  contactPhone       String?        @map("contact_phone")
+  onboardedAt        DateTime?      @map("onboarded_at")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
 
   // Relations
-  branches     MerchantBranch[]
-  offers       Offer[]
-  staff        MerchantStaff[]
-  payouts      Payout[]
-  auditLogs    AuditLog[]       @relation("MerchantAudit")
+  branches  MerchantBranch[]
+  offers    Offer[]
+  staff     MerchantStaff[]
+  payouts   Payout[]
+  auditLogs AuditLog[]       @relation("MerchantAudit")
 
-  @@map("merchants")
   @@index([status])
+  @@map("merchants")
 }
 
 model MerchantBranch {
-  id         String  @id @default(cuid())
-  merchantId String  @map("merchant_id")
+  id         String   @id @default(cuid())
+  merchantId String   @map("merchant_id")
   name       String
   address    String
   city       String
-  lat        Decimal @db.Decimal(10, 8)
-  lng        Decimal @db.Decimal(11, 8)
-  isActive   Boolean @default(true) @map("is_active")
+  lat        Decimal  @db.Decimal(10, 8)
+  lng        Decimal  @db.Decimal(11, 8)
+  isActive   Boolean  @default(true) @map("is_active")
   createdAt  DateTime @default(now()) @map("created_at")
 
   // Relations
-  merchant   Merchant            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  merchant    Merchant            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   redemptions RedemptionSession[]
 
-  @@map("merchant_branches")
   @@index([merchantId])
   // PostGIS or application-level geospatial queries on lat/lng
   @@index([lat, lng])
+  @@map("merchant_branches")
 }
 
 model MerchantStaff {
@@ -240,12 +240,12 @@ model MerchantStaff {
   createdAt  DateTime @default(now()) @map("created_at")
 
   // Relations
-  merchant     Merchant            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  redemptions  RedemptionSession[] @relation("StaffRedemptions")
+  merchant    Merchant            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  redemptions RedemptionSession[] @relation("StaffRedemptions")
 
-  @@map("merchant_staff")
   @@index([merchantId])
+  @@map("merchant_staff")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -273,10 +273,10 @@ model Offer {
   merchant    Merchant            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   redemptions RedemptionSession[]
 
-  @@map("offers")
   @@index([merchantId])
   @@index([category])
   @@index([isActive])
+  @@map("offers")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -306,13 +306,13 @@ model RedemptionSession {
   branch MerchantBranch? @relation(fields: [branchId], references: [id])
   staff  MerchantStaff?  @relation("StaffRedemptions", fields: [staffId], references: [id])
 
-  // Fraud: Only one REDEEMED status per user+offer combination per day is enforced at app level
-  @@map("redemption_sessions")
   @@index([userId])
   @@index([offerId])
   @@index([code])
   @@index([status])
   @@index([createdAt])
+  // Fraud: Only one REDEEMED status per user+offer combination per day is enforced at app level
+  @@map("redemption_sessions")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -320,23 +320,23 @@ model RedemptionSession {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Payout {
-  id               String   @id @default(cuid())
-  merchantId       String   @map("merchant_id")
-  periodStart      DateTime @map("period_start")
-  periodEnd        DateTime @map("period_end")
-  totalRedemptions Int      @map("total_redemptions")
-  payoutAmountNpr  Decimal  @map("payout_amount_npr") @db.Decimal(10, 2)
-  status           String   @default("PENDING") // PENDING | PROCESSING | PAID | DISPUTED
+  id               String    @id @default(cuid())
+  merchantId       String    @map("merchant_id")
+  periodStart      DateTime  @map("period_start")
+  periodEnd        DateTime  @map("period_end")
+  totalRedemptions Int       @map("total_redemptions")
+  payoutAmountNpr  Decimal   @map("payout_amount_npr") @db.Decimal(10, 2)
+  status           String    @default("PENDING") // PENDING | PROCESSING | PAID | DISPUTED
   paidAt           DateTime? @map("paid_at")
   notes            String?
-  createdAt        DateTime @default(now()) @map("created_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
 
   // Relations
   merchant Merchant @relation(fields: [merchantId], references: [id])
 
-  @@map("payouts")
   @@index([merchantId])
   @@index([status])
+  @@map("payouts")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -345,36 +345,36 @@ model Payout {
 
 model AuditLog {
   id         String   @id @default(cuid())
-  entity     String   // 'User' | 'Merchant' | 'Offer' | 'RedemptionSession'
+  entity     String // 'User' | 'Merchant' | 'Offer' | 'RedemptionSession'
   entityId   String   @map("entity_id")
-  action     String   // 'create' | 'update' | 'delete' | 'redeem'
+  action     String // 'create' | 'update' | 'delete' | 'redeem'
   actorId    String?  @map("actor_id")
   merchantId String?  @map("merchant_id")
-  metadata   Json?    // Context (changed fields, IP, device)
+  metadata   Json? // Context (changed fields, IP, device)
   createdAt  DateTime @default(now()) @map("created_at")
 
   // Relations
   actor    User?     @relation("AuditActor", fields: [actorId], references: [id])
   merchant Merchant? @relation("MerchantAudit", fields: [merchantId], references: [id])
 
-  @@map("audit_logs")
   @@index([entity, entityId])
   @@index([actorId])
   @@index([createdAt])
+  @@map("audit_logs")
 }
 
 model FraudFlag {
-  id              String   @id @default(cuid())
-  redemptionId    String   @map("redemption_id")
-  reason          String   // 'GEO_MISMATCH' | 'RAPID_REDEEM' | 'PIN_BRUTE_FORCE'
-  severity        String   // 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
-  reviewedBy      String?  @map("reviewed_by")
-  resolvedAt      DateTime? @map("resolved_at")
-  resolution      String?
-  createdAt       DateTime @default(now()) @map("created_at")
+  id           String    @id @default(cuid())
+  redemptionId String    @map("redemption_id")
+  reason       String // 'GEO_MISMATCH' | 'RAPID_REDEEM' | 'PIN_BRUTE_FORCE'
+  severity     String // 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+  reviewedBy   String?   @map("reviewed_by")
+  resolvedAt   DateTime? @map("resolved_at")
+  resolution   String?
+  createdAt    DateTime  @default(now()) @map("created_at")
 
-  @@map("fraud_flags")
   @@index([redemptionId])
   @@index([severity])
   @@index([resolvedAt])
+  @@map("fraud_flags")
 }
