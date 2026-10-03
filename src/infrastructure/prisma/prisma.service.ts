@@ -37,7 +37,7 @@ export class PrismaService
               { emit: 'stdout', level: 'warn' },
               { emit: 'stdout', level: 'error' },
             ],
-      errorFormat: 'minimal',
+      errorFormat: 'pretty',
     });
 
     // Log slow queries in development for performance awareness
@@ -58,10 +58,24 @@ export class PrismaService
 
   async onModuleInit(): Promise<void> {
     try {
-      await this.$connect();
-      this.logger.log('✅ Prisma connected to database');
+      // Log DATABASE_URL (masked for security, showing just first/last parts)
+      const dbUrl = process.env.DATABASE_URL || 'NOT SET';
+      const masked = dbUrl.includes('://') 
+        ? dbUrl.substring(0, 20) + '...' + dbUrl.substring(dbUrl.length - 20)
+        : 'INVALID FORMAT';
+      this.logger.log(`Attempting to connect with DATABASE_URL: ${masked}`);
+
+      // Connect with timeout
+      const connectPromise = this.$connect();
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Connection timeout after 10s')), 10000)
+      );
+
+      await Promise.race([connectPromise, timeoutPromise]);
+      this.logger.log('✅ Prisma connected to database successfully');
     } catch (error) {
-      this.logger.error('❌ Prisma failed to connect to database', error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`❌ Prisma failed to connect to database: ${errorMsg}`, error);
       // In production, exit process so Railway/orchestrator restarts the container
       if (process.env.NODE_ENV === 'production') {
         process.exit(1);
@@ -96,3 +110,4 @@ export class PrismaService
     });
   }
 }
+
