@@ -12,10 +12,17 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 # Install all deps (allowBuilds in pnpm-workspace.yaml handles native packages)
 RUN pnpm install --frozen-lockfile
 
-# Copy source, generate Prisma client, compile TypeScript
+# Copy source
 COPY . .
+
+# Generate Prisma client
 RUN pnpm prisma generate
-RUN pnpm build
+
+# Build TypeScript — force clean build by removing incremental cache first
+RUN rm -f tsconfig.tsbuildinfo && pnpm build
+
+# Verify the build output exists before we proceed
+RUN test -f dist/main.js || (echo "ERROR: dist/main.js not found after build!" && ls -la dist/ && exit 1)
 
 # ── Production image ──────────────────────────────────────────────────────────
 # pnpm uses a virtual store: node_modules/.pnpm/ contains all packages and
@@ -24,7 +31,6 @@ RUN pnpm build
 FROM node:20-alpine AS production
 WORKDIR /app
 
-# Only need the runtime binary (no corepack/pnpm needed at runtime)
 COPY package.json ./
 
 # Copy compiled app and the entire pnpm virtual store from builder
