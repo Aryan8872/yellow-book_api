@@ -4,18 +4,15 @@ WORKDIR /app
 # Native build tools needed for bcrypt, @parcel/watcher, etc.
 RUN apk add --no-cache python3 make g++
 
-# Enable pnpm via corepack
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy manifest files first (layer cache optimization)
+# Copy manifests first for layer-cache efficiency
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 
-# Install all dependencies.
-# pnpm-workspace.yaml's allowBuilds map lets native packages run their
-# postinstall scripts without interactive approval (no ERR_PNPM_IGNORED_BUILDS).
+# Install all deps (allowBuilds in pnpm-workspace.yaml handles native packages)
 RUN pnpm install --frozen-lockfile
 
-# Copy source and generate Prisma client
+# Copy source, generate Prisma types, compile TypeScript
 COPY . .
 RUN pnpm prisma generate
 RUN pnpm build
@@ -28,13 +25,17 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 
-# Production-only install
+# Production-only install (native deps like bcrypt still need to build)
 RUN pnpm install --frozen-lockfile --prod
 
+# Copy compiled output from builder
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+
+# Copy prisma schema so `prisma generate` can run, then generate the client
+# inside the production node_modules (pnpm virtual store path varies — this
+# is safer than trying to COPY the generated files from builder)
 COPY prisma ./prisma
+RUN pnpm prisma generate
 
 EXPOSE 3000
 CMD ["node", "dist/main"]
