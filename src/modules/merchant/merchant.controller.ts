@@ -9,6 +9,9 @@ import { CreateMerchantDto } from './dto/create-merchant.dto';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
 import { CreateBranchDto } from './dto/create-branch.dto';
 import { UpdateBranchDto } from './dto/update-branch.dto';
+import { CreateStaffDto } from './dto/create-staff.dto';
+import { UpdateStaffDto } from './dto/update-staff.dto';
+import { UpdatePinDto } from './dto/update-pin.dto';
 import type { Request } from 'express';
 
 @Controller('merchants')
@@ -60,5 +63,29 @@ export class MerchantController {
   @Roles(UserRole.ADMIN, UserRole.MERCHANT_ADMIN)
   async deleteBranch(@Param('branchId') branchId: string, @Req() req: Request) {
     return this.merchantService.deleteBranch(branchId, this.getUser(req));
+  }
+
+  // Staff CRUD
+  @Post(':merchantId/staff')
+  @Roles(UserRole.ADMIN, UserRole.MERCHANT_ADMIN)
+  async createStaff(@Param('merchantId') merchantId: string, @Body() dto: CreateStaffDto, @Req() req: Request) {
+    return this.merchantService.createStaff(merchantId, dto, this.getUser(req));
+  }
+
+  @Get(':merchantId/staff')
+  async getStaff(@Param('merchantId') merchantId: string, @Req() req: Request) {
+    return this.merchantService.getStaff(merchantId, this.getUser(req));
+  }
+
+  @Put('staff/:staffId')
+  @Roles(UserRole.ADMIN, UserRole.MERCHANT_ADMIN)
+  async updateStaff(@Param('staffId') staffId: string, @Body() dto: UpdateStaffDto, @Req() req: Request) {
+    return this.merchantService.updateStaff(staffId, dto, this.getUser(req));
+  }
+
+  @Put(':merchantId/pin')
+  @Roles(UserRole.ADMIN, UserRole.MERCHANT_ADMIN)
+  async updateMerchantPin(@Param('merchantId') merchantId: string, @Body() dto: UpdatePinDto, @Req() req: Request) {
+    return this.merchantService.updateMerchantPin(merchantId, dto, this.getUser(req));
   }
 }
