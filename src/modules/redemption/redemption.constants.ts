@@ -6,9 +6,9 @@
 export const REDEMPTION_CONSTANTS = {
   /**
    * Redemption code TTL in seconds
-   * 180 seconds = 3 minutes
+   * 86400 seconds = 1 day (changed from 180s for travel time)
    */
-  CODE_TTL_SECONDS: 180,
+  CODE_TTL_SECONDS: 86400,
 
   /**
    * Characters allowed in redemption codes
