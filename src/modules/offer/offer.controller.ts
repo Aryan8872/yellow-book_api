@@ -7,7 +7,6 @@ import {
   Param,
   Query,
   Body,
-  Req,
   HttpCode,
   HttpStatus,
   ForbiddenException,
@@ -27,7 +26,8 @@ import {
 } from './dto/offer.dto';
 import { Public, Roles } from '../auth/auth.decorators';
 import { UserRole } from '../auth/auth.types';
-import type { Request } from 'express';
+import type { AuthenticatedUser } from '../auth/auth.types';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Offers')
 @Controller('offers')
@@ -117,9 +117,8 @@ export class OfferController {
   async createOffer(
     @Param('merchantId') merchantId: string,
     @Body() dto: CreateOfferDto,
-    @Req() req: Request,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const user = (req as any).user;
     // Verify user belongs to the merchant or is admin
     if (user.role !== UserRole.ADMIN && user.merchantId !== merchantId) {
       throw new ForbiddenException(
@@ -140,9 +139,8 @@ export class OfferController {
     @Param('merchantId') merchantId: string,
     @Param('offerId') offerId: string,
     @Body() dto: UpdateOfferDto,
-    @Req() req: Request,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const user = (req as any).user;
     // Verify user belongs to the merchant or is admin
     if (user.role !== UserRole.ADMIN && user.merchantId !== merchantId) {
       throw new ForbiddenException(
@@ -163,9 +161,8 @@ export class OfferController {
   async deleteOffer(
     @Param('merchantId') merchantId: string,
     @Param('offerId') offerId: string,
-    @Req() req: Request,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const user = (req as any).user;
     // Verify user belongs to the merchant or is admin
     if (user.role !== UserRole.ADMIN && user.merchantId !== merchantId) {
       throw new ForbiddenException(
