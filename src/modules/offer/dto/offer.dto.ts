@@ -10,6 +10,7 @@ import {
   IsBoolean,
   IsDateString,
   IsObject,
+  IsArray,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -26,6 +27,25 @@ export class QueryOffersDto {
   @IsString()
   @IsOptional()
   category?: string;
+
+  @ApiPropertyOptional({
+    example: 'trending',
+    enum: ['trending', 'popular', 'rating', 'savings', 'newest'],
+    description: 'Sort offers by criteria',
+  })
+  @IsString()
+  @IsOptional()
+  sortBy?: 'trending' | 'popular' | 'rating' | 'savings' | 'newest';
+
+  @ApiPropertyOptional({ example: 'Kathmandu', description: 'Filter by city or district name' })
+  @IsString()
+  @IsOptional()
+  city?: string;
+
+  @ApiPropertyOptional({ example: 'Thamel', description: 'Filter by area/neighborhood name or location text' })
+  @IsString()
+  @IsOptional()
+  location?: string;
 
   @ApiPropertyOptional({ example: 27.7172 })
   @Type(() => Number)
@@ -56,6 +76,11 @@ export class QueryOffersDto {
   @IsOptional()
   page?: number;
 
+  @ApiPropertyOptional({ example: 'clx456def', description: 'Filter offers by merchant ID' })
+  @IsString()
+  @IsOptional()
+  merchantId?: string;
+
   @ApiPropertyOptional({ example: 20, description: 'Results per page (max 100)' })
   @Type(() => Number)
   @IsInt()
@@ -85,18 +110,65 @@ export class CreateOfferDto {
   @IsNotEmpty()
   terms!: string;
 
-  @ApiProperty({
-    example: 'DINING',
-    enum: ['DINING', 'WELLNESS', 'ENTERTAINMENT', 'RETAIL', 'TRAVEL', 'BEAUTY'],
-  })
+  @ApiProperty({ example: 'cmusspcto0003devrmc2l7q84', description: 'Category ID' })
   @IsString()
   @IsNotEmpty()
-  category!: string;
+  categoryId!: string;
 
   @ApiProperty({ example: 500, description: 'Estimated savings in NPR' })
   @IsNumber()
   @Min(0)
   estimatedSavingsNpr!: number;
+
+  @ApiPropertyOptional({ example: 1200, description: 'Original price in NPR before discount' })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  originalPriceNpr?: number;
+
+  @ApiPropertyOptional({ example: 600, description: 'Discounted price in NPR after offer' })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  discountedPriceNpr?: number;
+
+  @ApiPropertyOptional({ example: 50, description: 'Discount percentage 0-100' })
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  discountPercentage?: number;
+
+  @ApiPropertyOptional({
+    example: 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=600&q=80',
+    description: 'Primary hero thumbnail URL shown on cards',
+  })
+  @IsString()
+  @IsOptional()
+  imageUrl?: string;
+
+  @ApiPropertyOptional({
+    example: [
+      'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80',
+    ],
+    description: 'Image gallery URLs — used in the offer detail image slider',
+    type: [String],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  images?: string[];
+
+  @ApiPropertyOptional({
+    example: ["Chef's Signature Burger", 'Secret Sauce', 'Crispy Artisan Fries'],
+    description: 'Highlight label strings shown as story bubbles on the detail page',
+    type: [String],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  highlights?: string[];
 
   @ApiProperty({
     example: 3,
@@ -168,19 +240,58 @@ export class UpdateOfferDto {
   @IsOptional()
   terms?: string;
 
-  @ApiPropertyOptional({
-    example: 'DINING',
-    enum: ['DINING', 'WELLNESS', 'ENTERTAINMENT', 'RETAIL', 'TRAVEL', 'BEAUTY'],
-  })
+  @ApiPropertyOptional({ example: 'cmusspcto0003devrmc2l7q84', description: 'Category ID' })
   @IsString()
   @IsOptional()
-  category?: string;
+  categoryId?: string;
 
   @ApiPropertyOptional({ example: 500, description: 'Estimated savings in NPR' })
   @IsNumber()
   @Min(0)
   @IsOptional()
   estimatedSavingsNpr?: number;
+
+  @ApiPropertyOptional({ example: 1200, description: 'Original price in NPR before discount' })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  originalPriceNpr?: number;
+
+  @ApiPropertyOptional({ example: 600, description: 'Discounted price in NPR after offer' })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  discountedPriceNpr?: number;
+
+  @ApiPropertyOptional({ example: 50, description: 'Discount percentage 0-100' })
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  discountPercentage?: number;
+
+  @ApiPropertyOptional({ example: 'https://cdn.example.com/offer-thumb.jpg' })
+  @IsString()
+  @IsOptional()
+  imageUrl?: string;
+
+  @ApiPropertyOptional({
+    example: ['https://cdn.example.com/img1.jpg'],
+    type: [String],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  images?: string[];
+
+  @ApiPropertyOptional({
+    example: ["Chef's Special", 'Cocktails'],
+    type: [String],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  highlights?: string[];
 
   @ApiPropertyOptional({
     example: 3,
