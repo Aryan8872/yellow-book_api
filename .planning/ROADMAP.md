@@ -64,7 +64,7 @@
 
 ## Phase 2: Code Quality & Security
 
-**Status:** Pending
+**Status:** Planned
 **Goal:** Fix type safety, security issues, and add tests
 
 **Requirements:** (None - technical debt)
@@ -78,6 +78,14 @@
 - Add unit tests for offer module
 
 **Estimated Effort:** 1-2 days
+
+**Plans:** 6 plans
+- [ ] 02-01-PLAN.md — Replace (req as any).user with @CurrentUser() decorator
+- [ ] 02-02-PLAN.md — Sanitize error messages to prevent information disclosure
+- [ ] 02-03-PLAN.md — Extract merchant ownership check to shared guard
+- [ ] 02-04-PLAN.md — Add unit tests for redemption module
+- [ ] 02-05-PLAN.md — Add unit tests for auth module
+- [ ] 02-06-PLAN.md — Add unit tests for offer module
 
 ---
 
