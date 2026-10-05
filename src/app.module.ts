@@ -18,6 +18,9 @@ import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { RedemptionModule } from './modules/redemption/redemption.module';
 import { OfferModule } from './modules/offer/offer.module';
+import { CategoryModule } from './modules/category/category.module';
+import { UploadModule } from './modules/upload/upload.module';
+import { MerchantModule } from './modules/merchant/merchant.module';
 
 // Common
 import { HealthController } from './common/health/health.controller';
@@ -97,6 +100,9 @@ import { ThrottlerStorageRedisService } from './common/throttler/throttler-stora
     AuthModule,
     RedemptionModule,
     OfferModule,
+    CategoryModule,
+    UploadModule,
+    MerchantModule,
   ],
   controllers: [HealthController],
   providers: [
