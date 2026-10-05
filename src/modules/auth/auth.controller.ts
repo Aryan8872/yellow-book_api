@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Get,
+  Patch,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -19,6 +20,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto, RefreshTokenDto } from './dto/auth.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { Public, RequireApiKey, Roles } from './auth.decorators';
 import { UserRole } from './auth.types';
 import type { AuthenticatedUser } from './auth.types';
@@ -83,10 +85,23 @@ export class AuthController {
     summary: 'Get current authenticated user profile and subscription status',
   })
   async getProfile(
-    @CurrentUser() user: AuthenticatedUser,
+    @CurrentUser('id') userId: string,
     @CorrelationId() correlationId: string,
   ) {
+    const user = await this.authService.getUserProfile(userId);
     return { user, correlationId };
+  }
+
+  @Patch('profile')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Update current user profile' })
+  @ApiResponse({ status: 200, description: 'Profile updated successfully' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async updateProfile(
+    @Body() dto: UpdateProfileDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.authService.updateProfile(userId, dto);
   }
 
   @Public()

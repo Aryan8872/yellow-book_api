@@ -14,6 +14,7 @@ import * as bcrypt from 'bcrypt';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../infrastructure/redis/redis.constants';
 import { RegisterDto } from './dto/auth.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UserRole, JwtPayload, SafeUser, AuthTokens } from './auth.types';
 import { AUTH_CONSTANTS, USER_SELECT_FIELDS, USER_SELECT_WITH_PASSWORD } from './auth.constants';
 import {
@@ -110,9 +111,50 @@ export class AuthService {
    */
   async login(
     user: SafeUser & { role: string; subscriptionActive?: boolean },
-  ): Promise<{ user: SafeUser; tokens: AuthTokens }> {
-    const tokens = await this.generateTokens(user);
-    return { user, tokens };
+  ): Promise<{ user: SafeUser & { merchantId?: string }; tokens: AuthTokens }> {
+    // Fetch full user with merchantStaff relation for token generation
+    const fullUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: USER_SELECT_FIELDS,
+    });
+
+    if (!fullUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    const tokens = await this.generateTokens({
+      ...fullUser,
+      role: user.role,
+    });
+
+    const userWithMerchantId = {
+      ...user,
+      merchantId: fullUser.merchantStaff?.merchantId,
+    };
+
+    return { user: userWithMerchantId, tokens };
+  }
+
+  /**
+   * Get full user profile with merchant information
+   */
+  async getUserProfile(userId: string): Promise<SafeUser & { merchantId?: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: USER_SELECT_FIELDS,
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Extract merchantId from merchantStaff relation if exists
+    const merchantId = user.merchantStaff?.merchantId;
+
+    return {
+      ...this.toSafeUser(user),
+      merchantId,
+    };
   }
 
   /**
@@ -260,7 +302,7 @@ export class AuthService {
     createdAt: Date;
     subscription?: { status: string; endsAt: Date | null } | null;
     merchantStaff?: { merchantId: string } | null;
-  }): SafeUser {
+  }): SafeUser & { merchantId?: string } {
     return {
       id: user.id,
       email: user.email,
@@ -269,6 +311,7 @@ export class AuthService {
       isVerified: user.isVerified,
       isActive: user.isActive,
       createdAt: user.createdAt,
+      merchantId: user.merchantStaff?.merchantId,
     };
   }
 
@@ -302,13 +345,10 @@ export class AuthService {
         secret: jwtSecret,
         expiresIn: AUTH_CONSTANTS.ACCESS_TOKEN_EXPIRY_SECONDS,
       }),
-      this.jwtService.signAsync(
-        { sub: user.id },
-        {
-          secret: refreshSecret,
-          expiresIn: AUTH_CONSTANTS.REFRESH_TOKEN_EXPIRY_SECONDS,
-        },
-      ),
+      this.jwtService.signAsync(payload, {
+        secret: refreshSecret,
+        expiresIn: AUTH_CONSTANTS.REFRESH_TOKEN_EXPIRY_SECONDS,
+      }),
     ]);
 
     // Store latest refresh token in Redis for rotation/reuse detection
@@ -329,5 +369,24 @@ export class AuthService {
       refreshToken,
       expiresIn: AUTH_CONSTANTS.ACCESS_TOKEN_EXPIRY_SECONDS,
     };
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.name && { name: dto.name }),
+        ...(dto.avatarUrl && { avatarUrl: dto.avatarUrl }),
+        ...(dto.timezone && { timezone: dto.timezone }),
+      },
+    });
   }
 }
