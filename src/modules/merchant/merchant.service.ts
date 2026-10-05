@@ -56,13 +56,6 @@ export class MerchantService {
   }
 
   async getMerchant(id: string, user: AuthenticatedUser) {
-    // Application-level data scoping
-    if (user.role === UserRole.MERCHANT_STAFF || user.role === UserRole.MERCHANT_ADMIN) {
-      if (user.merchantId !== id) {
-        throw new ForbiddenException('Access denied');
-      }
-    }
-
     const merchant = await this.prisma.merchant.findUnique({ where: { id } });
     if (!merchant) {
       throw new NotFoundException('Merchant not found');
@@ -71,9 +64,6 @@ export class MerchantService {
   }
 
   async updateMerchant(id: string, dto: UpdateMerchantDto, user: AuthenticatedUser) {
-    // Verify ownership
-    await this.getMerchant(id, user);
-
     return this.prisma.merchant.update({
       where: { id },
       data: dto,
@@ -95,14 +85,6 @@ export class MerchantService {
 
   async getBranches(merchantId: string, user: AuthenticatedUser) {
     const where: Prisma.MerchantBranchWhereInput = { merchantId };
-
-    // Application-level data scoping
-    if (user.role === UserRole.MERCHANT_STAFF || user.role === UserRole.MERCHANT_ADMIN) {
-      if (user.merchantId !== merchantId) {
-        throw new ForbiddenException('Access denied');
-      }
-    }
-
     return this.prisma.merchantBranch.findMany({ where });
   }
 
@@ -114,9 +96,6 @@ export class MerchantService {
     if (!branch) {
       throw new NotFoundException('Branch not found');
     }
-
-    // Verify merchant ownership
-    await this.getMerchant(branch.merchantId, user);
 
     return this.prisma.merchantBranch.update({
       where: { id: branchId },
@@ -133,9 +112,6 @@ export class MerchantService {
       throw new NotFoundException('Branch not found');
     }
 
-    // Verify merchant ownership
-    await this.getMerchant(branch.merchantId, user);
-
     return this.prisma.merchantBranch.delete({
       where: { id: branchId },
     });
@@ -143,9 +119,6 @@ export class MerchantService {
 
   // Staff CRUD
   async createStaff(merchantId: string, dto: CreateStaffDto, user: AuthenticatedUser) {
-    // Verify merchant ownership
-    await this.getMerchant(merchantId, user);
-
     // Check if user already exists
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -195,14 +168,6 @@ export class MerchantService {
 
   async getStaff(merchantId: string, user: AuthenticatedUser) {
     const where: Prisma.MerchantStaffWhereInput = { merchantId };
-
-    // Application-level data scoping
-    if (user.role === UserRole.MERCHANT_STAFF || user.role === UserRole.MERCHANT_ADMIN) {
-      if (user.merchantId !== merchantId) {
-        throw new ForbiddenException('Access denied');
-      }
-    }
-
     return this.prisma.merchantStaff.findMany({
       where,
       include: { user: true },
@@ -219,9 +184,6 @@ export class MerchantService {
       throw new NotFoundException('Staff not found');
     }
 
-    // Verify merchant ownership
-    await this.getMerchant(staff.merchantId, user);
-
     // Update user isActive status (disable on departure)
     if (dto.isActive !== undefined) {
       await this.prisma.user.update({
@@ -237,9 +199,6 @@ export class MerchantService {
   }
 
   async updateMerchantPin(merchantId: string, dto: UpdatePinDto, user: AuthenticatedUser) {
-    // Verify merchant ownership
-    await this.getMerchant(merchantId, user);
-
     // Verify merchant's current password
     const passwordValid = await this.verifyMerchantPassword(merchantId, dto.currentPassword);
     if (!passwordValid) {
