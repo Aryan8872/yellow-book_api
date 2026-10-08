@@ -313,7 +313,6 @@ async function main() {
       terms: '• Valid 7 days a week for dine-in customers only.\n• Maximum 1 voucher redemption per table per visit.\n• Not valid during official public holidays or special events.\n• Must present redemption code to staff prior to ordering.',
       estimatedSavingsNpr: 650,
       originalPriceNpr: 1300,
-      discountedPriceNpr: 650,
       discountPercentage: 50,
       imageUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=800&q=80',
       images: [
@@ -338,7 +337,6 @@ async function main() {
       terms: '• Valid Monday through Friday from 12:00 PM to 8:00 PM.\n• Dine-in only.',
       estimatedSavingsNpr: 450,
       originalPriceNpr: 900,
-      discountedPriceNpr: 450,
       discountPercentage: 50,
       imageUrl: 'https://images.unsplash.com/photo-1567620832903-9fc6debc209f?auto=format&fit=crop&w=800&q=80',
       images: [
@@ -364,7 +362,6 @@ async function main() {
       terms: '• Prior appointment reservation required at least 24 hours in advance.\n• Valid for couple or two individuals arriving at the same session.\n• Sunday through Thursday only.',
       estimatedSavingsNpr: 2500,
       originalPriceNpr: 5000,
-      discountedPriceNpr: 2500,
       discountPercentage: 50,
       imageUrl: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=800&q=80',
       images: [
@@ -389,7 +386,6 @@ async function main() {
       terms: '• Appointment required.\n• Cannot be combined with package deals.',
       estimatedSavingsNpr: 1800,
       originalPriceNpr: 3600,
-      discountedPriceNpr: 1800,
       discountPercentage: 50,
       imageUrl: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80',
       images: [
@@ -414,7 +410,6 @@ async function main() {
       terms: '• Valid for Monday through Thursday shows.\n• Excludes premier night screenings and 3D glasses surcharge.',
       estimatedSavingsNpr: 450,
       originalPriceNpr: 900,
-      discountedPriceNpr: 450,
       discountPercentage: 50,
       imageUrl: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=800&q=80',
       images: [
@@ -440,7 +435,6 @@ async function main() {
       terms: '• Valid on labeled stock items.\n• Show app redemption prior to billing.',
       estimatedSavingsNpr: 3500,
       originalPriceNpr: 7000,
-      discountedPriceNpr: 3500,
       discountPercentage: 50,
       imageUrl: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=800&q=80',
       images: [
@@ -466,7 +460,6 @@ async function main() {
       terms: '• Advance reservation required 7 days prior.\n• Subject to hotel occupancy availability.\n• Includes complimentary breakfast buffet for two.',
       estimatedSavingsNpr: 7500,
       originalPriceNpr: 15000,
-      discountedPriceNpr: 7500,
       discountPercentage: 50,
       imageUrl: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80',
       images: [
