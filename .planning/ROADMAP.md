@@ -28,7 +28,7 @@
 
 ## Phase 1: Merchant Module & Location Features
 
-**Status:** Pending
+**Status:** Complete
 **Goal:** Build merchant management, location-based offers, and data scoping
 
 **Requirements:**
@@ -64,7 +64,7 @@
 
 ## Phase 2: Code Quality & Security
 
-**Status:** Planned
+**Status:** Complete
 **Goal:** Fix type safety, security issues, and add tests
 
 **Requirements:** (None - technical debt)
@@ -80,18 +80,18 @@
 **Estimated Effort:** 1-2 days
 
 **Plans:** 6 plans
-- [ ] 02-01-PLAN.md — Replace (req as any).user with @CurrentUser() decorator
-- [ ] 02-02-PLAN.md — Sanitize error messages to prevent information disclosure
-- [ ] 02-03-PLAN.md — Extract merchant ownership check to shared guard
-- [ ] 02-04-PLAN.md — Add unit tests for redemption module
-- [ ] 02-05-PLAN.md — Add unit tests for auth module
-- [ ] 02-06-PLAN.md — Add unit tests for offer module
+- [x] 02-01-PLAN.md — Replace (req as any).user with @CurrentUser() decorator
+- [x] 02-02-PLAN.md — Sanitize error messages to prevent information disclosure
+- [x] 02-03-PLAN.md — Extract merchant ownership check to shared guard
+- [x] 02-04-PLAN.md — Add unit tests for redemption module
+- [x] 02-05-PLAN.md — Add unit tests for auth module
+- [x] 02-06-PLAN.md — Add unit tests for offer module
 
 ---
 
 ## Phase 3: Admin Module
 
-**Status:** Pending
+**Status:** Planned
 **Goal:** Build admin management features
 
 **Requirements:**
@@ -106,9 +106,38 @@
 
 **Estimated Effort:** 2-3 days
 
+**Plans:** 6 plans
+- [ ] 03-01-PLAN.md — Admin module foundation with controller, service, and guards
+- [ ] 03-02-PLAN.md — Merchant approval workflow
+- [ ] 03-03-PLAN.md — User management for admins
+- [ ] 03-04-PLAN.md — Fraud review interface
+- [ ] 03-05-PLAN.md — Payout/settlement management (depends on Phase 4)
+- [ ] 03-06-PLAN.md — Paginated search APIs for admin panel tables
+
 ---
 
-## Phase 4: Payments & Subscriptions
+## Phase 4: Analytics Dashboard
+
+**Status:** Pending
+**Goal:** Build analytics features for admin panel
+
+**Requirements:**
+- ANLY-01 through ANLY-06: Analytics features
+
+**Key Deliverables:**
+- Redemption trends (day by day, week data for bar graph)
+- Most redeemed offers
+- Trending merchants (whose offers have been claimed more)
+- Merchant revenue analytics (revenue model: original price × redemption count)
+- Redemption summary by category (multi-series line chart data)
+- Configurable time ranges (last 7 days, last 30 days)
+- Chart-ready data endpoints for Next.js admin panel
+
+**Estimated Effort:** 3-4 days
+
+---
+
+## Phase 5: Payments & Subscriptions
 
 **Status:** Pending
 **Goal:** Integrate payment gateway and subscription billing
@@ -127,7 +156,7 @@
 
 ---
 
-## Phase 5: Notifications
+## Phase 6: Notifications
 
 **Status:** Pending
 **Goal:** Add real-time notifications
@@ -147,7 +176,6 @@
 
 ## Future Phases
 
-- Analytics dashboard for merchants
 - Social features (sharing, reviews)
 - Advanced fraud detection
 - Multi-city expansion beyond Pokhara, Chitwan, Kathmandu

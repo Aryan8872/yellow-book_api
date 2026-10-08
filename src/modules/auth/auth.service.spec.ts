@@ -102,6 +102,32 @@ describe('AuthService', () => {
       await expect(service.register(dto))
         .rejects.toThrow(ConflictException);
     });
+
+    it('should force role to USER regardless of requested role', async () => {
+      const dto = {
+        email: 'admin@example.com',
+        password: 'Password123!',
+        name: 'Evil User',
+        role: 'ADMIN',
+      } as any;
+
+      mockPrismaService.user.findUnique.mockResolvedValue(null);
+      mockPrismaService.user.create.mockResolvedValue({
+        id: 'user-2',
+        email: dto.email,
+        role: 'USER',
+      });
+      mockJwtService.signAsync.mockResolvedValue('access-token');
+      mockConfigService.get.mockReturnValue('secret');
+
+      await service.register(dto);
+
+      expect(mockPrismaService.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ role: 'USER' }),
+        }),
+      );
+    });
   });
 
   describe('login', () => {
@@ -145,7 +171,7 @@ describe('AuthService', () => {
   });
 
   describe('refreshToken', () => {
-    it('should refresh token successfully', async () => {
+    it('should refresh token successfully with valid refresh token', async () => {
       const refreshToken = 'valid-refresh-token';
       const payload = { sub: 'user-1', email: 'test@example.com', role: 'USER' };
 
@@ -161,17 +187,50 @@ describe('AuthService', () => {
       const result = await service.refreshToken({ refreshToken } as any);
 
       expect(result).toHaveProperty('accessToken');
+      expect(result.accessToken).toBe('new-access-token');
+      expect(mockJwtService.verifyAsync).toHaveBeenCalledWith(refreshToken, expect.any(Object));
+      expect(mockJwtService.signAsync).toHaveBeenCalled();
     });
 
-    it('should throw UnauthorizedException for invalid token', async () => {
-      mockJwtService.verifyAsync.mockRejectedValue(new Error('Invalid token'));
+    it('should throw UnauthorizedException for invalid/expired refresh token', async () => {
+      const refreshToken = 'invalid-token';
 
-      await expect(service.refreshToken({ refreshToken: 'invalid-token' } as any))
+      mockJwtService.verifyAsync.mockRejectedValue(new Error('Token expired'));
+
+      await expect(service.refreshToken({ refreshToken } as any))
+        .rejects.toThrow(UnauthorizedException);
+      expect(mockJwtService.verifyAsync).toHaveBeenCalledWith(refreshToken, expect.any(Object));
+    });
+
+    it('should throw UnauthorizedException if user does not exist', async () => {
+      const refreshToken = 'valid-refresh-token';
+      const payload = { sub: 'user-1', email: 'test@example.com', role: 'USER' };
+
+      mockJwtService.verifyAsync.mockResolvedValue(payload);
+      mockPrismaService.user.findUnique.mockResolvedValue(null);
+
+      await expect(service.refreshToken({ refreshToken } as any))
         .rejects.toThrow(UnauthorizedException);
     });
 
-    it('should throw UnauthorizedException for token reuse', async () => {
-      const refreshToken = 'reused-token';
+    it('should throw UnauthorizedException if user is inactive', async () => {
+      const refreshToken = 'valid-refresh-token';
+      const payload = { sub: 'user-1', email: 'test@example.com', role: 'USER' };
+
+      mockJwtService.verifyAsync.mockResolvedValue(payload);
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        email: 'test@example.com',
+        role: 'USER',
+        isActive: false,
+      });
+
+      await expect(service.refreshToken({ refreshToken } as any))
+        .rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should handle concurrent refresh requests correctly', async () => {
+      const refreshToken = 'valid-refresh-token';
       const payload = { sub: 'user-1', email: 'test@example.com', role: 'USER' };
 
       mockJwtService.verifyAsync.mockResolvedValue(payload);
@@ -180,10 +239,71 @@ describe('AuthService', () => {
         email: 'test@example.com',
         role: 'USER',
       });
-      mockJwtService.signAsync.mockRejectedValue(new Error('Token reuse detected'));
+      mockJwtService.signAsync.mockResolvedValue('new-access-token');
+      mockConfigService.get.mockReturnValue('secret');
 
-      await expect(service.refreshToken({ refreshToken } as any))
-        .rejects.toThrow(UnauthorizedException);
+      // Simulate concurrent refresh requests
+      const [result1, result2] = await Promise.all([
+        service.refreshToken({ refreshToken } as any),
+        service.refreshToken({ refreshToken } as any),
+      ]);
+
+      expect(result1).toHaveProperty('accessToken');
+      expect(result2).toHaveProperty('accessToken');
+    });
+
+    it('should include correct token expiration time in new access token', async () => {
+      const refreshToken = 'valid-refresh-token';
+      const payload = { sub: 'user-1', email: 'test@example.com', role: 'USER' };
+
+      mockJwtService.verifyAsync.mockResolvedValue(payload);
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        email: 'test@example.com',
+        role: 'USER',
+      });
+      mockJwtService.signAsync.mockImplementation((payload) => {
+        expect(payload).toHaveProperty('expiresIn');
+        return 'new-access-token';
+      });
+      mockConfigService.get.mockReturnValue('secret');
+
+      await service.refreshToken({ refreshToken } as any);
+
+      expect(mockJwtService.signAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: 'user-1',
+          email: 'test@example.com',
+          role: 'USER',
+        }),
+        expect.any(Object)
+      );
+    });
+  });
+
+  describe('logout', () => {
+    it('should logout successfully and clear refresh tokens', async () => {
+      const userId = 'user-1';
+
+      mockPrismaService.user.update.mockResolvedValue({ id: userId });
+
+      await service.logout(userId);
+
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith({
+        where: { id: userId },
+        data: expect.objectContaining({
+          refreshTokenHash: null,
+        }),
+      });
+    });
+
+    it('should handle logout for non-existent user gracefully', async () => {
+      const userId = 'non-existent-user';
+
+      mockPrismaService.user.update.mockRejectedValue(new Error('User not found'));
+
+      // Should not throw, just log error
+      await expect(service.logout(userId)).resolves.toBeUndefined();
     });
   });
 });

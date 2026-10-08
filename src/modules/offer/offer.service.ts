@@ -4,7 +4,7 @@ import {
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, District } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MetricsService } from '../../infrastructure/metrics/metrics.service';
 import {
@@ -21,7 +21,7 @@ export interface MerchantBranchSummary {
   id: string;
   name: string;
   address: string;
-  city: string;
+  district: string;
   lat: number;
   lng: number;
 }
@@ -58,14 +58,12 @@ export interface OfferSummary {
   terms: string;
   estimatedSavingsNpr: number;
   originalPriceNpr: number | null;
-  discountedPriceNpr: number | null;
   discountPercentage: number | null;
-  imageUrl: string | null;
+  coverImage: string | null;
   images: string[];
   highlights: string[];
   rating: number;
   reviewsCount: number;
-  maxPerUser: number;
   isActive: boolean;
   isFeatured: boolean;
   validFrom: Date | null;
@@ -96,6 +94,16 @@ export class OfferService {
 
     const locationTerm = (query.location || query.city)?.trim();
 
+    // District is now a Prisma enum — resolve free text to matching values
+    // so location search ("kathmandu") keeps working against the enum column.
+    const matchDistricts = (term: string): District[] =>
+      (Object.values(District) as District[]).filter((d) =>
+        d.toLowerCase().includes(term.toLowerCase()),
+      );
+
+    const qDistricts = query.q ? matchDistricts(query.q) : [];
+    const locationDistricts = locationTerm ? matchDistricts(locationTerm) : [];
+
     const where: Prisma.OfferWhereInput = {
       isActive: true,
       ...(query.merchantId && { merchantId: query.merchantId }),
@@ -117,7 +125,7 @@ export class OfferService {
                 some: {
                   OR: [
                     { name: { contains: query.q, mode: 'insensitive' } },
-                    { city: { contains: query.q, mode: 'insensitive' } },
+                    ...(qDistricts.length > 0 ? [{ district: { in: qDistricts } }] : []),
                     { address: { contains: query.q, mode: 'insensitive' } },
                   ],
                 },
@@ -132,7 +140,9 @@ export class OfferService {
             some: {
               isActive: true,
               OR: [
-                { city: { contains: locationTerm, mode: 'insensitive' } },
+                ...(locationDistricts.length > 0
+                  ? [{ district: { in: locationDistricts } }]
+                  : []),
                 { address: { contains: locationTerm, mode: 'insensitive' } },
                 { name: { contains: locationTerm, mode: 'insensitive' } },
               ],
@@ -245,7 +255,8 @@ export class OfferService {
     });
 
     if (!offer) {
-      throw new NotFoundException(`Offer with ID ${id} not found`);
+      this.logger.warn(`Offer not found: ${id}`);
+      throw new NotFoundException('Offer not found');
     }
 
     return mapOfferToSummary(offer);
@@ -315,12 +326,10 @@ export class OfferService {
         terms: dto.terms,
         estimatedSavingsNpr: dto.estimatedSavingsNpr,
         originalPriceNpr: dto.originalPriceNpr,
-        discountedPriceNpr: dto.discountedPriceNpr,
         discountPercentage: dto.discountPercentage,
-        imageUrl: dto.imageUrl,
+        coverImage: dto.coverImage,
         images: dto.images ?? [],
         highlights: dto.highlights ?? [],
-        maxPerUser: dto.maxPerUser,
         isActive: dto.isActive ?? true,
         isFeatured: dto.isFeatured ?? false,
         availabilityJson: dto.availabilityJson,
@@ -368,12 +377,10 @@ export class OfferService {
         ...(dto.categoryId !== undefined && { categoryId: dto.categoryId }),
         ...(dto.estimatedSavingsNpr !== undefined && { estimatedSavingsNpr: dto.estimatedSavingsNpr }),
         ...(dto.originalPriceNpr !== undefined && { originalPriceNpr: dto.originalPriceNpr }),
-        ...(dto.discountedPriceNpr !== undefined && { discountedPriceNpr: dto.discountedPriceNpr }),
         ...(dto.discountPercentage !== undefined && { discountPercentage: dto.discountPercentage }),
-        ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
+        ...(dto.coverImage !== undefined && { coverImage: dto.coverImage }),
         ...(dto.images !== undefined && { images: dto.images }),
         ...(dto.highlights !== undefined && { highlights: dto.highlights }),
-        ...(dto.maxPerUser !== undefined && { maxPerUser: dto.maxPerUser }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
         ...(dto.isFeatured !== undefined && { isFeatured: dto.isFeatured }),
         ...(dto.availabilityJson !== undefined && { availabilityJson: dto.availabilityJson }),

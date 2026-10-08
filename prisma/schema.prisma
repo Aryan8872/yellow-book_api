@@ -46,6 +46,40 @@ enum OfferCategory {
   BEAUTY
 }
 
+// Operating districts the platform currently supports
+enum District {
+  JHAPA
+  KATHMANDU
+  CHITWAN
+  POKHARA
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CATEGORY MODULE
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  iconUrl     String?  @map("icon_url")
+  imageUrl    String?  @map("image_url")
+  color       String?  @default("#6366f1") // Hex color for UI
+  isActive    Boolean  @default(true) @map("is_active")
+  displayOrder Int     @default(0) @map("display_order") // For sorting in UI
+  offerCount  Int      @default(0) @map("offer_count") // Cached count of active offers
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  offers Offer[]
+
+  @@index([isActive])
+  @@index([displayOrder])
+  @@map("categories")
+}
+
 enum RedemptionStatus {
   INIT
   PENDING_SYNC
@@ -210,15 +244,17 @@ model Merchant {
 }
 
 model MerchantBranch {
-  id         String   @id @default(cuid())
-  merchantId String   @map("merchant_id")
-  name       String
-  address    String
-  city       String
-  lat        Decimal  @db.Decimal(10, 8)
-  lng        Decimal  @db.Decimal(11, 8)
-  isActive   Boolean  @default(true) @map("is_active")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id             String    @id @default(cuid())
+  merchantId     String    @map("merchant_id")
+  name           String
+  address        String
+  phone          String
+  district       District
+  lat            Decimal   @db.Decimal(10, 8)
+  lng            Decimal   @db.Decimal(11, 8)
+  isActive       Boolean   @default(true) @map("is_active")
+  operatingHours Json?     @map("operating_hours") // { monday: { open, close, closed? }, ... }
+  createdAt      DateTime  @default(now()) @map("created_at")
 
   // Relations
   merchant    Merchant            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
@@ -253,29 +289,41 @@ model MerchantStaff {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Offer {
-  id                  String        @id @default(cuid())
-  merchantId          String        @map("merchant_id")
+  id                  String   @id @default(cuid())
+  merchantId          String   @map("merchant_id")
+  categoryId          String   @map("category_id")
   title               String
   description         String
   terms               String
-  category            OfferCategory
-  estimatedSavingsNpr Decimal       @map("estimated_savings_npr") @db.Decimal(10, 2)
-  maxPerUser          Int           @default(1) @map("max_per_user")
-  isActive            Boolean       @default(true) @map("is_active")
-  isFeatured          Boolean       @default(false) @map("is_featured")
-  availabilityJson    Json?         @map("availability_json") // days/hours restrictions
-  validFrom           DateTime?     @map("valid_from")
-  validUntil          DateTime?     @map("valid_until")
-  createdAt           DateTime      @default(now()) @map("created_at")
-  updatedAt           DateTime      @updatedAt @map("updated_at")
+  estimatedSavingsNpr Decimal  @map("estimated_savings_npr") @db.Decimal(10, 2)
+  originalPriceNpr    Decimal? @map("original_price_npr") @db.Decimal(10, 2)
+  discountPercentage  Int?     @map("discount_percentage")
+  coverImage          String?  @map("cover_image")
+  images              String[] @default([])
+  highlights          String[] @default([])
+  rating              Decimal  @default(4.8) @db.Decimal(3, 2)
+  reviewsCount        Int      @default(0) @map("reviews_count")
+  isActive            Boolean  @default(true) @map("is_active")
+  isFeatured          Boolean  @default(false) @map("is_featured")
+  availabilityJson    Json?    @map("availability_json") // days/hours restrictions
+  validFrom           DateTime? @map("valid_from")
+  validUntil          DateTime? @map("valid_until")
+  viewCount           Int      @default(0) @map("view_count") // Track offer views for trending
+  redemptionCount     Int      @default(0) @map("redemption_count") // Track redemptions for popularity
+  trendingScore       Decimal  @default(0) @map("trending_score") @db.Decimal(10, 2) // Calculated trending score
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
 
   // Relations
   merchant    Merchant            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  category    Category            @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   redemptions RedemptionSession[]
 
   @@index([merchantId])
-  @@index([category])
+  @@index([categoryId])
   @@index([isActive])
+  @@index([trendingScore])
+  @@index([redemptionCount])
   @@map("offers")
 }
 

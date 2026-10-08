@@ -94,7 +94,9 @@ export class AuthService {
           passwordHash,
           name: dto.name ?? null,
           phone: dto.phone ?? null,
-          role: (dto.role as unknown as PrismaUserRole) ?? PrismaUserRole.USER,
+          // Public self-registration always creates a base USER account.
+          // Elevated roles (MERCHANT_*, ADMIN) are granted via admin flows only.
+          role: PrismaUserRole.USER,
           isVerified: false,
           isActive: true,
         },
@@ -122,9 +124,12 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
+    // Ensure role is properly mapped from Prisma enum to app enum
+    const mappedRole = mapPrismaRoleToAppRole(fullUser.role);
+
     const tokens = await this.generateTokens({
       ...fullUser,
-      role: user.role,
+      role: mappedRole,
     });
 
     const userWithMerchantId = {
@@ -225,11 +230,13 @@ export class AuthService {
    * Refresh token rotation with reuse detection.
    */
   async refreshToken(refreshToken: string): Promise<AuthTokens> {
+    const refreshSecret = this.config.get<string>('JWT_REFRESH_SECRET');
+    if (!refreshSecret) {
+      throw new UnauthorizedException('Server authentication is not configured');
+    }
     try {
       const decoded = this.jwtService.verify<{ sub: string }>(refreshToken, {
-        secret:
-          this.config.get<string>('JWT_REFRESH_SECRET') ||
-          AUTH_CONSTANTS.DEFAULT_REFRESH_SECRET,
+        secret: refreshSecret,
       });
 
       const tokenKey = getRefreshTokenKey(decoded.sub);
@@ -332,13 +339,17 @@ export class AuthService {
       subscriptionActive,
     };
 
-    const jwtSecret =
-      this.config.get<string>('JWT_SECRET') ||
-      AUTH_CONSTANTS.DEFAULT_JWT_SECRET;
+    const jwtSecret = this.config.get<string>('JWT_SECRET');
+    if (!jwtSecret) {
+      // Fail fast: signing with a hardcoded fallback secret would be
+      // trivially forgeable if it ever reached production.
+      throw new Error('JWT_SECRET environment variable is required');
+    }
 
-    const refreshSecret =
-      this.config.get<string>('JWT_REFRESH_SECRET') ||
-      AUTH_CONSTANTS.DEFAULT_REFRESH_SECRET;
+    const refreshSecret = this.config.get<string>('JWT_REFRESH_SECRET');
+    if (!refreshSecret) {
+      throw new Error('JWT_REFRESH_SECRET environment variable is required');
+    }
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
@@ -387,6 +398,7 @@ export class AuthService {
         ...(dto.avatarUrl && { avatarUrl: dto.avatarUrl }),
         ...(dto.timezone && { timezone: dto.timezone }),
       },
+      select: { id: true, email: true, name: true, avatarUrl: true, timezone: true },
     });
   }
 }

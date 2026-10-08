@@ -13,6 +13,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { RedisModule } from './infrastructure/redis/redis.module';
 import { MetricsModule } from './infrastructure/metrics/metrics.module';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
+import { CloudinaryModule } from './infrastructure/cloudinary/cloudinary.module';
 
 // Domain Modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -21,6 +22,8 @@ import { OfferModule } from './modules/offer/offer.module';
 import { CategoryModule } from './modules/category/category.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { MerchantModule } from './modules/merchant/merchant.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 // Common
 import { HealthController } from './common/health/health.controller';
@@ -97,12 +100,15 @@ import { ThrottlerStorageRedisService } from './common/throttler/throttler-stora
     RedisModule,
     PrismaModule,
     MetricsModule,
+    CloudinaryModule,
     AuthModule,
     RedemptionModule,
     OfferModule,
     CategoryModule,
     UploadModule,
     MerchantModule,
+    AdminModule,
+    AnalyticsModule,
   ],
   controllers: [HealthController],
   providers: [

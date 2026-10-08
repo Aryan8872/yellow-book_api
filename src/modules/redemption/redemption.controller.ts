@@ -1,11 +1,13 @@
 import {
   Controller,
   Post,
+  Get,
   Param,
   Body,
   Req,
   HttpCode,
   HttpStatus,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -22,6 +24,7 @@ import {
 import { Roles } from '../auth/auth.decorators';
 import { UserRole } from '../auth/auth.types';
 import type { Request } from 'express';
+import { ListRedemptionsDto } from '../admin/dto/list-redemptions.dto';
 
 @ApiTags('Redemptions')
 @Controller()
@@ -76,5 +79,14 @@ export class RedemptionController {
   async merchantRedeem(@Body() dto: MerchantRedeemDto, @Req() req: Request) {
     const user = (req as any).user;
     return this.redemptionService.merchantRedeem(user, dto);
+  }
+
+  @Get('sessions')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'List redemption sessions with pagination, search, and filters (Admin only)' })
+  @ApiResponse({ status: 200, description: 'Paginated list of redemption sessions' })
+  async listRedemptions(@Query() dto: ListRedemptionsDto) {
+    return this.redemptionService.listRedemptions(dto);
   }
 }

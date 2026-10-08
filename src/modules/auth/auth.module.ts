@@ -13,12 +13,14 @@ import { GoogleStrategy } from './strategies/google.strategy';
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret:
-          config.get<string>('JWT_SECRET') ||
-          'dev-super-secret-jwt-key-32chars-min!',
-        signOptions: { expiresIn: '1h' },
-      }),
+      useFactory: (config: ConfigService) => {
+        const secret = config.get<string>('JWT_SECRET');
+        if (!secret) {
+          // Fail fast at boot rather than silently signing with a known secret.
+          throw new Error('JWT_SECRET environment variable is required');
+        }
+        return { secret, signOptions: { expiresIn: '1h' } };
+      },
     }),
   ],
   controllers: [AuthController],

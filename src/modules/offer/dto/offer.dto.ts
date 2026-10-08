@@ -14,81 +14,81 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class QueryOffersDto {
-  @ApiPropertyOptional({ example: 'burger' })
-  @IsString()
-  @IsOptional()
-  q?: string;
+  export class QueryOffersDto {
+    @ApiPropertyOptional({ example: 'burger' })
+    @IsString()
+    @IsOptional()
+    q?: string;
 
-  @ApiPropertyOptional({
-    example: 'DINING',
-    enum: ['DINING', 'WELLNESS', 'ENTERTAINMENT', 'RETAIL', 'TRAVEL', 'BEAUTY'],
-  })
-  @IsString()
-  @IsOptional()
-  category?: string;
+    @ApiPropertyOptional({
+      example: 'DINING',
+      enum: ['DINING', 'WELLNESS', 'ENTERTAINMENT', 'RETAIL', 'TRAVEL', 'BEAUTY'],
+    })
+    @IsString()
+    @IsOptional()
+    category?: string;
 
-  @ApiPropertyOptional({
-    example: 'trending',
-    enum: ['trending', 'popular', 'rating', 'savings', 'newest'],
-    description: 'Sort offers by criteria',
-  })
-  @IsString()
-  @IsOptional()
-  sortBy?: 'trending' | 'popular' | 'rating' | 'savings' | 'newest';
+    @ApiPropertyOptional({
+      example: 'trending',
+      enum: ['trending', 'popular', 'rating', 'savings', 'newest'],
+      description: 'Sort offers by criteria',
+    })
+    @IsString()
+    @IsOptional()
+    sortBy?: 'trending' | 'popular' | 'rating' | 'savings' | 'newest';
 
-  @ApiPropertyOptional({ example: 'Kathmandu', description: 'Filter by city or district name' })
-  @IsString()
-  @IsOptional()
-  city?: string;
+    @ApiPropertyOptional({ example: 'Kathmandu', description: 'Filter by city or district name' })
+    @IsString()
+    @IsOptional()
+    city?: string;
 
-  @ApiPropertyOptional({ example: 'Thamel', description: 'Filter by area/neighborhood name or location text' })
-  @IsString()
-  @IsOptional()
-  location?: string;
+    @ApiPropertyOptional({ example: 'Thamel', description: 'Filter by area/neighborhood name or location text' })
+    @IsString()
+    @IsOptional()
+    location?: string;
 
-  @ApiPropertyOptional({ example: 27.7172 })
-  @Type(() => Number)
-  @IsNumber()
-  @Min(-90)
-  @Max(90)
-  @IsOptional()
-  lat?: number;
+    @ApiPropertyOptional({ example: 27.7172 })
+    @Type(() => Number)
+    @IsNumber()
+    @Min(-90)
+    @Max(90)
+    @IsOptional()
+    lat?: number;
 
-  @ApiPropertyOptional({ example: 85.324 })
-  @Type(() => Number)
-  @IsNumber()
-  @Min(-180)
-  @Max(180)
-  @IsOptional()
-  lng?: number;
+    @ApiPropertyOptional({ example: 85.324 })
+    @Type(() => Number)
+    @IsNumber()
+    @Min(-180)
+    @Max(180)
+    @IsOptional()
+    lng?: number;
 
-  @ApiPropertyOptional({ example: 10, description: 'Radius in kilometers' })
-  @Type(() => Number)
-  @IsNumber()
-  @IsOptional()
-  radiusKm?: number;
+    @ApiPropertyOptional({ example: 10, description: 'Radius in kilometers' })
+    @Type(() => Number)
+    @IsNumber()
+    @IsOptional()
+    radiusKm?: number;
 
-  @ApiPropertyOptional({ example: 1, description: 'Page number (1-indexed)' })
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @IsOptional()
-  page?: number;
+    @ApiPropertyOptional({ example: 1, description: 'Page number (1-indexed)' })
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    @IsOptional()
+    page?: number;
 
-  @ApiPropertyOptional({ example: 'clx456def', description: 'Filter offers by merchant ID' })
-  @IsString()
-  @IsOptional()
-  merchantId?: string;
+    @ApiPropertyOptional({ example: 'clx456def', description: 'Filter offers by merchant ID' })
+    @IsString()
+    @IsOptional()
+    merchantId?: string;
 
-  @ApiPropertyOptional({ example: 20, description: 'Results per page (max 100)' })
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  @IsOptional()
-  limit?: number;
-}
+    @ApiPropertyOptional({ example: 20, description: 'Results per page (max 100)' })
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    @Max(100)
+    @IsOptional()
+    limit?: number;
+  }
 
 export class CreateOfferDto {
   @ApiProperty({ example: '50% Off on All Burgers' })
@@ -126,12 +126,6 @@ export class CreateOfferDto {
   @IsOptional()
   originalPriceNpr?: number;
 
-  @ApiPropertyOptional({ example: 600, description: 'Discounted price in NPR after offer' })
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  discountedPriceNpr?: number;
-
   @ApiPropertyOptional({ example: 50, description: 'Discount percentage 0-100' })
   @IsInt()
   @Min(0)
@@ -141,11 +135,11 @@ export class CreateOfferDto {
 
   @ApiPropertyOptional({
     example: 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=600&q=80',
-    description: 'Primary hero thumbnail URL shown on cards',
+    description: 'Primary hero cover image URL shown on cards',
   })
   @IsString()
   @IsOptional()
-  imageUrl?: string;
+  coverImage?: string;
 
   @ApiPropertyOptional({
     example: [
@@ -169,15 +163,6 @@ export class CreateOfferDto {
   @IsString({ each: true })
   @IsOptional()
   highlights?: string[];
-
-  @ApiProperty({
-    example: 3,
-    description: 'Maximum number of times a user can redeem this offer',
-  })
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  maxPerUser!: number;
 
   @ApiProperty({
     example: true,
@@ -257,12 +242,6 @@ export class UpdateOfferDto {
   @IsOptional()
   originalPriceNpr?: number;
 
-  @ApiPropertyOptional({ example: 600, description: 'Discounted price in NPR after offer' })
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  discountedPriceNpr?: number;
-
   @ApiPropertyOptional({ example: 50, description: 'Discount percentage 0-100' })
   @IsInt()
   @Min(0)
@@ -270,10 +249,10 @@ export class UpdateOfferDto {
   @IsOptional()
   discountPercentage?: number;
 
-  @ApiPropertyOptional({ example: 'https://cdn.example.com/offer-thumb.jpg' })
+  @ApiPropertyOptional({ example: 'https://cdn.example.com/offer-cover.jpg', description: 'Primary hero cover image URL shown on cards' })
   @IsString()
   @IsOptional()
-  imageUrl?: string;
+  coverImage?: string;
 
   @ApiPropertyOptional({
     example: ['https://cdn.example.com/img1.jpg'],
@@ -292,16 +271,6 @@ export class UpdateOfferDto {
   @IsString({ each: true })
   @IsOptional()
   highlights?: string[];
-
-  @ApiPropertyOptional({
-    example: 3,
-    description: 'Maximum number of times a user can redeem this offer',
-  })
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  @IsOptional()
-  maxPerUser?: number;
 
   @ApiPropertyOptional({
     example: true,

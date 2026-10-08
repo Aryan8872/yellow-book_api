@@ -10,17 +10,17 @@ import { UserRole } from './auth.types';
  * Maps Prisma UserRole enum values to our internal UserRole enum.
  * Prisma enums and NestJS role enums are kept separate for domain flexibility.
  *
- * @param prismaRole - The Prisma UserRole enum value
+ * @param prismaRole - The Prisma UserRole enum value or string
  * @returns The corresponding application UserRole enum value
  */
-export function mapPrismaRoleToAppRole(prismaRole: PrismaUserRole): UserRole {
-  const roleMap: Record<PrismaUserRole, UserRole> = {
-    [PrismaUserRole.USER]: UserRole.USER,
-    [PrismaUserRole.MERCHANT_STAFF]: UserRole.MERCHANT_STAFF,
-    [PrismaUserRole.MERCHANT_ADMIN]: UserRole.MERCHANT_ADMIN,
-    [PrismaUserRole.ADMIN]: UserRole.ADMIN,
+export function mapPrismaRoleToAppRole(prismaRole: PrismaUserRole | string): UserRole {
+  const roleMap: Record<string, UserRole> = {
+    'USER': UserRole.USER,
+    'MERCHANT_STAFF': UserRole.MERCHANT_STAFF,
+    'MERCHANT_ADMIN': UserRole.MERCHANT_ADMIN,
+    'ADMIN': UserRole.ADMIN,
   };
-  return roleMap[prismaRole] ?? UserRole.USER;
+  return roleMap[prismaRole as string] ?? UserRole.USER;
 }
 
 /**

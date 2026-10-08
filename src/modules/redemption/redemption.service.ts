@@ -24,6 +24,7 @@ import {
   generateQrPayload,
   getRedemptionLockKey,
 } from './redemption.utils';
+import { ListRedemptionsDto } from '../admin/dto/list-redemptions.dto';
 
 // Offer selection fields for redemption queries
 const OFFER_SELECT_FIELDS = {
@@ -34,7 +35,6 @@ const OFFER_SELECT_FIELDS = {
   description: true,
   terms: true,
   estimatedSavingsNpr: true,
-  maxPerUser: true,
   isActive: true,
   merchant: {
     select: { id: true, name: true, merchantPinHash: true },
@@ -95,7 +95,8 @@ export class RedemptionService {
       });
 
       if (!offerRow) {
-        throw new NotFoundException(`Offer with ID ${offerId} not found`);
+        this.logger.warn(`Redemption failed: offer not found ${offerId}`);
+        throw new NotFoundException('Offer not found');
       }
 
       // 3. Check if user already has an active unresolved session for this offer
@@ -119,22 +120,7 @@ export class RedemptionService {
         };
       }
 
-      // 4. Check maxPerUser limit (total successful redemptions for this user+offer)
-      const redeemedCount = await tx.redemptionSession.count({
-        where: {
-          userId: user.id,
-          offerId,
-          status: RedemptionStatus.REDEEMED,
-        },
-      });
-
-      if (redeemedCount >= offerRow.maxPerUser) {
-        throw new ForbiddenException(
-          `You have reached the maximum redemption limit (${offerRow.maxPerUser}) for this offer.`,
-        );
-      }
-
-      // 5. Generate unique code and create session
+      // 4. Generate unique code and create session
       const code = generateRedemptionCode();
       const codeExpiresAt = new Date(
         Date.now() + REDEMPTION_CONSTANTS.CODE_TTL_SECONDS * 1000,
@@ -300,6 +286,98 @@ export class RedemptionService {
         };
       },
     );
+  }
+
+  async listRedemptions(dto: ListRedemptionsDto) {
+    const { page, limit, search, merchantId, offerId, status, startDate, endDate, sortBy, sortOrder } = dto;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.RedemptionSessionWhereInput = {};
+
+    if (merchantId) {
+      where.offer = { merchantId };
+    }
+
+    if (offerId) {
+      where.offerId = offerId;
+    }
+
+    if (status) {
+      where.status = status as RedemptionStatus;
+    }
+
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        where.createdAt.gte = new Date(startDate);
+      }
+      if (endDate) {
+        where.createdAt.lte = new Date(endDate);
+      }
+    }
+
+    if (search) {
+      where.OR = [
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+        { offer: { title: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    const orderBy: Prisma.RedemptionSessionOrderByWithRelationInput = {};
+    if (sortBy) {
+      orderBy[sortBy] = sortOrder || 'asc';
+    } else {
+      orderBy.createdAt = 'desc';
+    }
+
+    const [sessions, total] = await Promise.all([
+      this.prisma.redemptionSession.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+            },
+          },
+          offer: {
+            select: {
+              id: true,
+              title: true,
+              merchant: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+          branch: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      }),
+      this.prisma.redemptionSession.count({ where }),
+    ]);
+
+    return {
+      data: sessions,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrevious: page > 1,
+      },
+    };
   }
 
   // ─────────────────────────────────────────────────────────────────

@@ -26,12 +26,6 @@ export const AUTH_CONSTANTS = {
    * Redis key pattern for storing refresh tokens
    */
   REFRESH_TOKEN_KEY_PREFIX: 'refresh_token:',
-
-  /**
-   * Default JWT secrets for development (should be overridden by environment variables)
-   */
-  DEFAULT_JWT_SECRET: 'dev-super-secret-jwt-key-32chars-min!',
-  DEFAULT_REFRESH_SECRET: 'dev-refresh-secret-jwt-key-32chars!',
 } as const;
 
 /**

@@ -4,10 +4,8 @@ import {
   IsNotEmpty,
   IsString,
   MinLength,
-  IsEnum,
   IsOptional,
 } from 'class-validator';
-import { UserRole } from '../auth.types';
 
 export class RegisterDto {
   @ApiProperty({ example: 'user@offernepal.com' })
@@ -30,11 +28,6 @@ export class RegisterDto {
   @IsString()
   @IsOptional()
   phone?: string;
-
-  @ApiPropertyOptional({ enum: UserRole, default: UserRole.USER })
-  @IsEnum(UserRole)
-  @IsOptional()
-  role?: UserRole;
 }
 
 export class LoginDto {

@@ -3,16 +3,26 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { JwtPayload, AuthenticatedUser } from '../auth.types';
+import { mapPrismaRoleToAppRole } from '../auth.utils';
+import type { Request } from 'express';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(config: ConfigService) {
+    const secretOrKey = config.get<string>('JWT_SECRET');
+    if (!secretOrKey) {
+      // Fail fast at boot rather than silently signing with a known secret.
+      throw new Error('JWT_SECRET environment variable is required');
+    }
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        (req: Request) => {
+          return req?.cookies?.accessToken || null;
+        },
+      ]),
       ignoreExpiration: false,
-      secretOrKey:
-        config.get<string>('JWT_SECRET') ||
-        'dev-super-secret-jwt-key-32chars-min!',
+      secretOrKey,
     });
   }
 
@@ -24,7 +34,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     return {
       id: payload.sub,
       email: payload.email,
-      role: payload.role,
+      role: mapPrismaRoleToAppRole(payload.role as any),
       merchantId: payload.merchantId,
       subscriptionActive: payload.subscriptionActive,
     };
