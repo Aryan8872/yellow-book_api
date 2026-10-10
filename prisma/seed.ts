@@ -6,7 +6,7 @@
  * with complete imagery, pricing, and branches.
  */
 
-import { PrismaClient, MerchantStatus, District, RedemptionStatus } from '@prisma/client';
+import { PrismaClient, MerchantStatus, District, RedemptionStatus, UserRole, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -488,7 +488,7 @@ async function main() {
       email: 'customer@offernepal.com',
       passwordHash: customerPassword,
       name: 'Aayush Sharma',
-      role: 'CUSTOMER',
+      role: UserRole.USER,
       isVerified: true,
       isActive: true,
     },
@@ -502,7 +502,7 @@ async function main() {
     RedemptionStatus.PENDING_SYNC,
   ];
 
-  const redemptionRecords = [];
+  const redemptionRecords: Prisma.RedemptionSessionCreateManyInput[] = [];
   const now = Date.now();
   const dayMs = 24 * 60 * 60 * 1000;
 
