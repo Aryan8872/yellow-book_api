@@ -6,7 +6,7 @@
  * with complete imagery, pricing, and branches.
  */
 
-import { PrismaClient, MerchantStatus, District } from '@prisma/client';
+import { PrismaClient, MerchantStatus, District, RedemptionStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -258,7 +258,7 @@ async function main() {
     },
   ];
 
-  await Promise.all(
+  const createdBranches = await Promise.all(
     branchesData.map((branch) =>
       prisma.merchantBranch.create({
         data: branch,
@@ -470,7 +470,7 @@ async function main() {
     },
   ];
 
-  await Promise.all(
+  const createdOffers = await Promise.all(
     sampleOffers.map((offer) =>
       prisma.offer.create({
         data: offer,
@@ -478,7 +478,62 @@ async function main() {
     ),
   );
 
-  console.log(`✅ Created ${sampleOffers.length} comprehensive rich offers`);
+  console.log(`✅ Created ${createdOffers.length} comprehensive rich offers`);
+
+  // Create sample redemptions with varied statuses and dates (last 14 days)
+  console.log('🎟️ Creating realistic redemption sessions for analytics...');
+  const customerPassword = await bcrypt.hash('customer123', 10);
+  const sampleCustomer = await prisma.user.create({
+    data: {
+      email: 'customer@offernepal.com',
+      passwordHash: customerPassword,
+      name: 'Aayush Sharma',
+      role: 'CUSTOMER',
+      isVerified: true,
+      isActive: true,
+    },
+  });
+
+  const statuses: RedemptionStatus[] = [
+    RedemptionStatus.REDEEMED,
+    RedemptionStatus.REDEEMED,
+    RedemptionStatus.REDEEMED,
+    RedemptionStatus.EXPIRED,
+    RedemptionStatus.PENDING_SYNC,
+  ];
+
+  const redemptionRecords = [];
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  // Generate 25 redemptions spread across the past 12 days
+  for (let i = 0; i < 25; i++) {
+    const offer = createdOffers[i % createdOffers.length];
+    const branch = createdBranches.find((b) => b.merchantId === offer.merchantId) || createdBranches[0];
+    const daysAgo = (i % 12);
+    const createdAt = new Date(now - daysAgo * dayMs - (i * 3600000));
+    const status = statuses[i % statuses.length];
+    const isRedeemed = status === RedemptionStatus.REDEEMED;
+
+    redemptionRecords.push({
+      userId: sampleCustomer.id,
+      offerId: offer.id,
+      branchId: branch?.id || null,
+      code: `ON-${Math.floor(100000 + Math.random() * 900000)}`,
+      status,
+      savingsNpr: offer.estimatedSavingsNpr || 250,
+      codeExpiresAt: new Date(createdAt.getTime() + 15 * 60 * 1000),
+      redeemedAt: isRedeemed ? new Date(createdAt.getTime() + 5 * 60 * 1000) : null,
+      deviceInfo: i % 2 === 0 ? 'iPhone 15 Pro (iOS 17.4)' : 'Samsung Galaxy S24 (Android 14)',
+      createdAt,
+    });
+  }
+
+  await prisma.redemptionSession.createMany({
+    data: redemptionRecords,
+  });
+
+  console.log(`✅ Created ${redemptionRecords.length} redemption sessions across multiple days`);
   console.log('🎉 Seed completed successfully!');
 }
 
