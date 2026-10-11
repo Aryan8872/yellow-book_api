@@ -14,6 +14,7 @@ import { AuthenticatedUser } from '../auth/auth.types';
 import { ListMerchantsDto } from '../admin/dto/list-merchants.dto';
 import { ListBranchesDto } from '../admin/dto/list-branches.dto';
 import { ListMerchantRedemptionsDto } from './dto/list-merchant-redemptions.dto';
+import { ListMerchantOffersDto } from './dto/list-merchant-offers.dto';
 import { TimeRangeDto } from '../analytics/dto/time-range.dto';
 
 @Injectable()
@@ -621,11 +622,15 @@ export class MerchantService {
     };
   }
 
-  async getMerchantOffers(merchantId: string, query: any, user: AuthenticatedUser) {
+  async getMerchantOffers(
+    merchantId: string,
+    dto: ListMerchantOffersDto,
+    user: AuthenticatedUser,
+  ) {
     // Verify ownership
     await this.verifyMerchantAccess(merchantId, user);
 
-    const { page = 1, limit = 20, search, category, isActive, isFeatured, sortBy = 'createdAt', sortOrder = 'desc' } = query;
+    const { page = 1, limit = 20, search, category, isActive, isFeatured, sortBy = 'createdAt', sortOrder = 'desc' } = dto;
 
     const where: Prisma.OfferWhereInput = { merchantId };
 
@@ -634,7 +639,12 @@ export class MerchantService {
     }
 
     if (category) {
-      where.category = category;
+      // Accept either the category id or its slug (mirrors the public
+      // offers endpoint).
+      where.OR = [
+        { categoryId: category },
+        { category: { slug: { equals: category.toLowerCase(), mode: 'insensitive' } } },
+      ];
     }
 
     if (isActive !== undefined) {
@@ -648,6 +658,7 @@ export class MerchantService {
     const [offers, total] = await Promise.all([
       this.prisma.offer.findMany({
         where,
+        // `sortBy` is whitelisted by the DTO, so this key is always valid.
         orderBy: { [sortBy]: sortOrder },
         skip: (page - 1) * limit,
         take: limit,

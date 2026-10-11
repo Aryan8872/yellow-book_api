@@ -28,6 +28,7 @@ import { UpdatePinDto } from './dto/update-pin.dto';
 import { ListMerchantsDto } from '../admin/dto/list-merchants.dto';
 import { ListBranchesDto } from '../admin/dto/list-branches.dto';
 import { ListMerchantRedemptionsDto } from './dto/list-merchant-redemptions.dto';
+import { ListMerchantOffersDto } from './dto/list-merchant-offers.dto';
 import { TimeRangeDto } from '../analytics/dto/time-range.dto';
 import { OfferService } from '../offer/offer.service';
 import { CreateOfferDto } from '../offer/dto/offer.dto';
@@ -380,7 +381,7 @@ export class MerchantController {
   @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page' })
   @ApiQuery({ name: 'search', required: false, type: String, description: 'Search by title' })
-  @ApiQuery({ name: 'category', required: false, type: String, description: 'Filter by category' })
+  @ApiQuery({ name: 'category', required: false, type: String, description: 'Filter by category id or slug' })
   @ApiQuery({ name: 'isActive', required: false, type: Boolean, description: 'Filter by active status' })
   @ApiQuery({ name: 'isFeatured', required: false, type: Boolean, description: 'Filter by featured status' })
   @ApiOkResponse({
@@ -408,10 +409,10 @@ export class MerchantController {
   @ApiResponse({ status: 404, description: 'Merchant not found' })
   async getMerchantOffers(
     @Param('merchantId') merchantId: string,
-    @Query() query: any,
+    @Query() dto: ListMerchantOffersDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.merchantService.getMerchantOffers(merchantId, query, user);
+    return this.merchantService.getMerchantOffers(merchantId, dto, user);
   }
 
   // Offer CRUD (merchant-scoped)
