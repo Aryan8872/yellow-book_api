@@ -92,6 +92,13 @@ import { ThrottlerStorageRedisService } from './common/throttler/throttler-stora
             ttl: 60000,
             limit: 20,
           },
+          // Strict bucket for credential + single-use-token endpoints
+          // (forgot/reset password, email verification).
+          {
+            name: 'auth',
+            ttl: 60000,
+            limit: 5,
+          },
         ],
         storage,
       }),

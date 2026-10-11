@@ -43,6 +43,12 @@ WORKDIR /app
 # Prisma needs libssl at runtime on Alpine
 RUN apk add --no-cache openssl
 
+# pg_dump / pg_restore are required by scripts/backup-database.sh and
+# scripts/restore-database.sh, which also run inside this image when a backup
+# Cron service is deployed from it. Without this the cron job fails with
+# "pg_dump not found".
+RUN apk add --no-cache postgresql16-client
+
 COPY package.json ./
 
 # Copy compiled app and the entire pnpm virtual store from builder

@@ -34,6 +34,39 @@ function toRad(degrees: number): number {
 }
 
 /**
+ * Returns true when an offer's validFrom/validUntil window contains `now`.
+ *
+ * A null bound is unbounded on that side (so an offer with no validUntil never
+ * expires on schedule). `isActive` is intentionally NOT considered here — the
+ * admin on/off toggle is orthogonal to time-based scheduling.
+ *
+ * @param offer - Object carrying validFrom / validUntil (Date | string | null)
+ * @param now   - Reference time (defaults to current time; injectable for tests)
+ */
+export function isOfferScheduleActive(
+  offer: { validFrom?: Date | string | null; validUntil?: Date | string | null },
+  now: Date = new Date(),
+): boolean {
+  const nowMs = now.getTime();
+
+  if (offer.validFrom != null) {
+    const fromMs = new Date(offer.validFrom).getTime();
+    if (Number.isFinite(fromMs) && fromMs > nowMs) {
+      return false; // Not started yet
+    }
+  }
+
+  if (offer.validUntil != null) {
+    const untilMs = new Date(offer.validUntil).getTime();
+    if (Number.isFinite(untilMs) && untilMs < nowMs) {
+      return false; // Already expired
+    }
+  }
+
+  return true;
+}
+
+/**
  * Maps Prisma offer entity with merchant branches and rich metadata to summary DTO
  *
  * @param offer - The Prisma offer entity

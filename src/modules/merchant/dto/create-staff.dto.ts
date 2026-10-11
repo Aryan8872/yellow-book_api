@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsEmail, MinLength, IsOptional } from 'class-validator';
+import { IsString, IsEmail, MinLength, IsOptional, IsArray, IsIn } from 'class-validator';
+import { STAFF_PERMISSIONS } from '../../../common/constants/staff-permissions';
 
 export class CreateStaffDto {
   @ApiProperty({ example: 'Ram Bahadur' })
@@ -23,4 +24,10 @@ export class CreateStaffDto {
   @ApiProperty({ enum: ['MERCHANT_STAFF', 'MERCHANT_ADMIN'] })
   @IsString()
   role!: 'MERCHANT_STAFF' | 'MERCHANT_ADMIN';
+
+  @ApiPropertyOptional({ enum: STAFF_PERMISSIONS, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @IsIn([...STAFF_PERMISSIONS], { each: true })
+  permissions?: string[];
 }

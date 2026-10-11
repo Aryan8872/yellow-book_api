@@ -1,5 +1,6 @@
 import { SetMetadata } from '@nestjs/common';
 import { UserRole } from './auth.types';
+import { StaffPermission } from '../../common/constants/staff-permissions';
 
 export const IS_PUBLIC_KEY = 'isPublic';
 /**
@@ -12,6 +13,19 @@ export const ROLES_KEY = 'roles';
  * Requires one or more UserRole permissions to access the route.
  */
 export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);
+
+export const STAFF_PERMISSION_KEY = 'staffPermissions';
+/**
+ * Requires the authenticated staff member to hold every listed granular
+ * permission (see `StaffPermission`). Enforced by `StaffPermissionGuard`,
+ * which reads the permissions from the caller's `MerchantStaff` row.
+ *
+ * NOTE: `UserRole.ADMIN` and `UserRole.MERCHANT_ADMIN` implicitly satisfy any
+ * permission requirement, so this never breaks the existing role-based logic.
+ */
+export const RequireStaffPermission = (
+  ...permissions: StaffPermission[]
+) => SetMetadata(STAFF_PERMISSION_KEY, permissions);
 
 export const API_KEY_PROTECTED_KEY = 'isApiKeyProtected';
 /**

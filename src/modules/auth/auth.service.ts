@@ -4,6 +4,7 @@ import {
   ConflictException,
   Inject,
   NotFoundException,
+  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -22,7 +23,23 @@ import {
   normalizeEmail,
   isSubscriptionActive,
   getRefreshTokenKey,
+  generateSecureToken,
+  hashSecureToken,
+  passwordResetExpiry,
+  emailVerificationExpiry,
 } from './auth.utils';
+import { NotificationsService } from '../notification/notifications.service';
+import { ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto } from './dto/auth.dto';
+
+/**
+ * Identical wording for every reset-token failure so an attacker cannot tell
+ * "no such token" from "expired" from "already used" (T-02-02).
+ */
+const INVALID_RESET_TOKEN_MESSAGE =
+  'This password reset link is invalid or has expired. Please request a new one.';
+
+const INVALID_VERIFICATION_TOKEN_MESSAGE =
+  'This verification link is invalid or has expired. Please request a new one.';
 
 @Injectable()
 export class AuthService {
@@ -33,6 +50,7 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -105,6 +123,12 @@ export class AuthService {
     });
 
     const tokens = await this.generateTokens(newUser);
+
+    // Fire-and-forget: registration must not depend on an external mail
+    // provider's latency, and a delivery failure must not fail signup
+    // (the user can always request a new link via /auth/resend-verification).
+    void this.mintAndSendEmailVerification(newUser);
+
     return { user: this.toSafeUser(newUser), tokens };
   }
 
@@ -202,6 +226,7 @@ export class AuthService {
           name: profile.name,
           role: PrismaUserRole.USER,
           isVerified: true, // OAuth emails are verified by the provider
+          emailVerified: true, // same guarantee for the new email flag
           isActive: true,
           oauthAccounts: {
             create: {
@@ -218,6 +243,8 @@ export class AuthService {
               providerId: profile.providerId,
             },
           },
+          // The provider has already proven ownership of this address.
+          emailVerified: true,
         },
         select: USER_SELECT_FIELDS,
       });
@@ -270,13 +297,48 @@ export class AuthService {
   }
 
   /**
-   * Invalidates the user's refresh token in Redis.
+   * Invalidates the user's refresh token in Redis and database.
    */
   async logout(userId: string): Promise<void> {
     try {
       await this.redis.del(getRefreshTokenKey(userId));
     } catch (err) {
-      this.logger.error(`Failed to delete refresh token for user ${userId}`, err);
+      this.logger.error(`Failed to delete refresh token from Redis for user ${userId}`, err);
+    }
+
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          refreshToken: null,
+          refreshTokenExpiresAt: null,
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Failed to delete refresh token from database for user ${userId}`, err);
+    }
+  }
+
+  /**
+   * Invalidates all user sessions (revokes all refresh tokens).
+   */
+  async revokeAllTokens(userId: string): Promise<void> {
+    try {
+      await this.redis.del(getRefreshTokenKey(userId));
+    } catch (err) {
+      this.logger.error(`Failed to delete refresh token from Redis for user ${userId}`, err);
+    }
+
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          refreshToken: null,
+          refreshTokenExpiresAt: null,
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Failed to revoke tokens for user ${userId}`, err);
     }
   }
 
@@ -296,6 +358,186 @@ export class AuthService {
   }
 
   // ─────────────────────────────────────────────────────────
+  // Password reset (T-02-01, T-02-02)
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Starts a password reset.
+   *
+   * ALWAYS returns normally — the controller answers with a generic 202 so the
+   * endpoint cannot be used to enumerate accounts (T-02-01). Unknown,
+   * soft-deleted and deactivated accounts get the identical response and no
+   * email.
+   */
+  async forgotPassword(dto: ForgotPasswordDto): Promise<void> {
+    const email = normalizeEmail(dto.email);
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        isActive: true,
+        deletedAt: true,
+      },
+    });
+
+    if (!user || user.deletedAt || !user.isActive) {
+      this.logger.log(`Password reset requested for unknown account: ${email}`);
+      return;
+    }
+
+    const token = generateSecureToken();
+
+    try {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          // Only the hash is persisted; the raw token exists solely in the email.
+          passwordResetToken: hashSecureToken(token),
+          passwordResetExpiresAt: passwordResetExpiry(),
+        },
+      });
+    } catch (err) {
+      // Swallowed on purpose: surfacing a DB error here would distinguish real
+      // accounts from fake ones and re-open the enumeration hole.
+      this.logger.error(
+        `Failed to persist password reset token for user ${user.id}`,
+        err,
+      );
+      return;
+    }
+
+    await this.notifications.sendPasswordReset(
+      { email: user.email, name: user.name },
+      token,
+    );
+  }
+
+  /**
+   * Completes a password reset with a single-use token.
+   *
+   * Rejects unknown, already-used and expired tokens with the same message so
+   * nothing can be inferred from the error (T-02-02).
+   */
+  async resetPassword(dto: ResetPasswordDto): Promise<void> {
+    const tokenHash = hashSecureToken(dto.token.trim());
+
+    const user = await this.prisma.user.findFirst({
+      where: { passwordResetToken: tokenHash },
+      select: {
+        id: true,
+        passwordResetExpiresAt: true,
+        isActive: true,
+        deletedAt: true,
+      },
+    });
+
+    if (!user || user.deletedAt || !user.isActive) {
+      throw new BadRequestException(INVALID_RESET_TOKEN_MESSAGE);
+    }
+
+    if (
+      !user.passwordResetExpiresAt ||
+      user.passwordResetExpiresAt.getTime() < Date.now()
+    ) {
+      // Clear the stale token so it can never be replayed.
+      await this.clearPasswordResetToken(user.id);
+      throw new BadRequestException(INVALID_RESET_TOKEN_MESSAGE);
+    }
+
+    const passwordHash = await bcrypt.hash(
+      dto.password,
+      AUTH_CONSTANTS.BCRYPT_ROUNDS,
+    );
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        // Single use: the token is consumed by this very update.
+        passwordResetToken: null,
+        passwordResetExpiresAt: null,
+      },
+    });
+
+    // Anyone holding a session from before the reset must be logged out.
+    await this.revokeAllTokens(user.id);
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // Email verification (T-02-03)
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Verifies an email address with a single-use token.
+   *
+   * Reuses the same "identical error" rule as password reset.
+   */
+  async verifyEmail(dto: VerifyEmailDto): Promise<void> {
+    const tokenHash = hashSecureToken(dto.token.trim());
+
+    const user = await this.prisma.user.findFirst({
+      where: { emailVerificationToken: tokenHash },
+      select: {
+        id: true,
+        emailVerificationExpiresAt: true,
+        emailVerified: true,
+      },
+    });
+
+    if (!user || user.emailVerified) {
+      throw new BadRequestException(INVALID_VERIFICATION_TOKEN_MESSAGE);
+    }
+
+    if (
+      !user.emailVerificationExpiresAt ||
+      user.emailVerificationExpiresAt.getTime() < Date.now()
+    ) {
+      await this.clearEmailVerificationToken(user.id);
+      throw new BadRequestException(INVALID_VERIFICATION_TOKEN_MESSAGE);
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerified: true,
+        emailVerificationToken: null,
+        emailVerificationExpiresAt: null,
+      },
+    });
+  }
+
+  /**
+   * Re-issues a verification email for the authenticated user.
+   *
+   * Returns without effect (and without an email) when the address is already
+   * verified, so the caller's response is always the same generic 202.
+   */
+  async resendEmailVerification(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        emailVerified: true,
+        deletedAt: true,
+      },
+    });
+
+    if (!user || user.deletedAt || user.emailVerified) {
+      this.logger.log(
+        `Verification resend requested for already-verified account: ${userId}`,
+      );
+      return;
+    }
+
+    await this.mintAndSendEmailVerification(user);
+  }
+
+  // ─────────────────────────────────────────────────────────
   // Private Helpers
   // ─────────────────────────────────────────────────────────
 
@@ -305,6 +547,7 @@ export class AuthService {
     name: string | null;
     role: PrismaUserRole;
     isVerified: boolean;
+    emailVerified?: boolean;
     isActive: boolean;
     createdAt: Date;
     subscription?: { status: string; endsAt: Date | null } | null;
@@ -316,10 +559,76 @@ export class AuthService {
       name: user.name,
       role: mapPrismaRoleToAppRole(user.role),
       isVerified: user.isVerified,
+      emailVerified: user.emailVerified ?? false,
       isActive: user.isActive,
       createdAt: user.createdAt,
       merchantId: user.merchantStaff?.merchantId,
     };
+  }
+
+  /**
+   * Mints a single-use email-verification token, persists only its hash and
+   * sends the raw token by email. Never throws: callers must not be able to
+   * distinguish "email failed" from "email sent".
+   */
+  private async mintAndSendEmailVerification(user: {
+    id: string;
+    email: string;
+    name: string | null;
+  }): Promise<void> {
+    const token = generateSecureToken();
+
+    try {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          emailVerificationToken: hashSecureToken(token),
+          emailVerificationExpiresAt: emailVerificationExpiry(),
+        },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to persist email verification token for user ${user.id}`,
+        err,
+      );
+      return;
+    }
+
+    await this.notifications.sendEmailVerification(
+      { email: user.email, name: user.name },
+      token,
+    );
+  }
+
+  private async clearPasswordResetToken(userId: string): Promise<void> {
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { passwordResetToken: null, passwordResetExpiresAt: null },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to clear password reset token for user ${userId}`,
+        err,
+      );
+    }
+  }
+
+  private async clearEmailVerificationToken(userId: string): Promise<void> {
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          emailVerificationToken: null,
+          emailVerificationExpiresAt: null,
+        },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to clear email verification token for user ${userId}`,
+        err,
+      );
+    }
   }
 
   private async generateTokens(user: {
@@ -361,6 +670,25 @@ export class AuthService {
         expiresIn: AUTH_CONSTANTS.REFRESH_TOKEN_EXPIRY_SECONDS,
       }),
     ]);
+
+    // Calculate refresh token expiration date
+    const refreshTokenExpiresAt = new Date();
+    refreshTokenExpiresAt.setSeconds(
+      refreshTokenExpiresAt.getSeconds() + AUTH_CONSTANTS.REFRESH_TOKEN_EXPIRY_SECONDS,
+    );
+
+    // Store refresh token in database as fallback
+    try {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          refreshToken,
+          refreshTokenExpiresAt,
+        },
+      });
+    } catch (err) {
+      this.logger.error('Failed to store refresh token in database', err);
+    }
 
     // Store latest refresh token in Redis for rotation/reuse detection
     try {

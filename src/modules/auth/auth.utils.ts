@@ -3,8 +3,13 @@
  * Helper functions for authentication operations
  */
 
+import * as crypto from 'crypto';
 import { UserRole as PrismaUserRole } from '@prisma/client';
 import { UserRole } from './auth.types';
+import {
+  PASSWORD_RESET_TTL_MS,
+  EMAIL_VERIFICATION_TTL_MS,
+} from '../../common/constants/email-tokens.constants';
 
 /**
  * Maps Prisma UserRole enum values to our internal UserRole enum.
@@ -57,3 +62,34 @@ export function getRefreshTokenKey(
 ): string {
   return `${prefix}${userId}`;
 }
+
+/**
+ * Generates a URL-safe, single-use token (256 bits of entropy).
+ *
+ * The raw value is what gets emailed; only its hash is ever persisted.
+ */
+export function generateSecureToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+/**
+ * Hashes a single-use email token for at-rest storage (T-02-02).
+ *
+ * SHA-256 is used rather than bcrypt deliberately: these tokens carry 256 bits
+ * of CSPRNG entropy, so there is no dictionary/brute-force surface to slow down,
+ * and the lookup has to be an exact-match index probe on every reset attempt.
+ */
+export function hashSecureToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/** Expiry timestamp for a freshly minted password-reset token. */
+export function passwordResetExpiry(now: Date = new Date()): Date {
+  return new Date(now.getTime() + PASSWORD_RESET_TTL_MS);
+}
+
+/** Expiry timestamp for a freshly minted email-verification token. */
+export function emailVerificationExpiry(now: Date = new Date()): Date {
+  return new Date(now.getTime() + EMAIL_VERIFICATION_TTL_MS);
+}
+

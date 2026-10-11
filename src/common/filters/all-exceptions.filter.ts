@@ -9,6 +9,7 @@ import {
 import type { Request, Response } from 'express';
 import { CORRELATION_ID_HEADER } from '../middlewares/correlation-id.middleware';
 import { AppErrorCode } from '../constants/error-codes';
+import { Sentry } from '../sentry/sentry.setup';
 
 export interface ValidationErrorDetail {
   field: string;
@@ -111,6 +112,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
       this.logger.warn(
         `[ClientError] ${request.method} ${request.url} | correlationId: ${correlationId} | statusCode: ${statusCode} | ${JSON.stringify(errorMessage)}`,
       );
+    }
+
+    // Report unexpected server errors to Sentry with request context.
+    // Client errors (4xx) are expected outcomes and are not tracked.
+    if (statusCode >= 500 && Sentry.isInitialized()) {
+      Sentry.withScope((scope) => {
+        scope.setTag('correlationId', correlationId ?? 'unknown');
+        scope.setLevel('error');
+        scope.setContext('http', {
+          method: request.method,
+          url: request.url,
+          statusCode,
+          errorCode,
+        });
+        Sentry.captureException(exception);
+      });
     }
 
     response.status(statusCode).json(payload);

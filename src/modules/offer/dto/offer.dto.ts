@@ -11,6 +11,9 @@ import {
   IsDateString,
   IsObject,
   IsArray,
+  MaxLength,
+  MinLength,
+  IsUrl,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -94,6 +97,8 @@ export class CreateOfferDto {
   @ApiProperty({ example: '50% Off on All Burgers' })
   @IsString()
   @IsNotEmpty()
+  @MinLength(3)
+  @MaxLength(200)
   title!: string;
 
   @ApiProperty({
@@ -101,6 +106,8 @@ export class CreateOfferDto {
   })
   @IsString()
   @IsNotEmpty()
+  @MinLength(10)
+  @MaxLength(2000)
   description!: string;
 
   @ApiProperty({
@@ -108,6 +115,8 @@ export class CreateOfferDto {
   })
   @IsString()
   @IsNotEmpty()
+  @MinLength(10)
+  @MaxLength(1000)
   terms!: string;
 
   @ApiProperty({ example: 'cmusspcto0003devrmc2l7q84', description: 'Category ID' })
@@ -137,7 +146,7 @@ export class CreateOfferDto {
     example: 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=600&q=80',
     description: 'Primary hero cover image URL shown on cards',
   })
-  @IsString()
+  @IsUrl()
   @IsOptional()
   coverImage?: string;
 
@@ -150,7 +159,8 @@ export class CreateOfferDto {
     type: [String],
   })
   @IsArray()
-  @IsString({ each: true })
+  @IsUrl({}, { each: true })
+  @MaxLength(10, { each: true })
   @IsOptional()
   images?: string[];
 
@@ -161,6 +171,8 @@ export class CreateOfferDto {
   })
   @IsArray()
   @IsString({ each: true })
+  @MaxLength(50, { each: true })
+  @MaxLength(5)
   @IsOptional()
   highlights?: string[];
 

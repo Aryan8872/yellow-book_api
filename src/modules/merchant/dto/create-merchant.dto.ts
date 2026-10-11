@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEmail, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsEmail, MinLength, MaxLength, Matches, IsUrl } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateMerchantDto {
@@ -7,6 +7,8 @@ export class CreateMerchantDto {
     example: 'Burger House & Crunchy Fried Chicken',
   })
   @IsString()
+  @MinLength(2)
+  @MaxLength(200)
   name!: string;
 
   @ApiPropertyOptional({
@@ -15,6 +17,7 @@ export class CreateMerchantDto {
   })
   @IsOptional()
   @IsString()
+  @MaxLength(1000)
   description?: string;
 
   @ApiPropertyOptional({
@@ -22,7 +25,7 @@ export class CreateMerchantDto {
     example: 'https://example.com/logo.png',
   })
   @IsOptional()
-  @IsString()
+  @IsUrl()
   logoUrl?: string;
 
   @ApiPropertyOptional({
@@ -30,7 +33,7 @@ export class CreateMerchantDto {
     example: 'https://example.com/cover.jpg',
   })
   @IsOptional()
-  @IsString()
+  @IsUrl()
   coverUrl?: string;
 
   @ApiPropertyOptional({
@@ -38,7 +41,7 @@ export class CreateMerchantDto {
     example: 'https://burgerhouse.com.np',
   })
   @IsOptional()
-  @IsString()
+  @IsUrl()
   websiteUrl?: string;
 
   @ApiPropertyOptional({
@@ -47,6 +50,7 @@ export class CreateMerchantDto {
   })
   @IsOptional()
   @IsEmail()
+  @MaxLength(255)
   contactEmail?: string;
 
   @ApiPropertyOptional({
@@ -55,6 +59,9 @@ export class CreateMerchantDto {
   })
   @IsOptional()
   @IsString()
+  @Matches(/^\+?[1-9]\d{1,14}$/, {
+    message: 'Phone number must be a valid international format'
+  })
   contactPhone?: string;
 
   @ApiPropertyOptional({
@@ -63,6 +70,7 @@ export class CreateMerchantDto {
   })
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   registrationNumber?: string;
 
   @ApiPropertyOptional({
@@ -71,5 +79,6 @@ export class CreateMerchantDto {
   })
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   vatNumber?: string;
 }

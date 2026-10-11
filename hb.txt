@@ -1,0 +1,4 @@
+offernepal@0.0.1 E:\flutter\OfferNepal\api\offernepal
+`-- ts-jest@29.4.14
+  `-- handlebars@4.7.9
+

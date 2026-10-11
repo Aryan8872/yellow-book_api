@@ -13,7 +13,7 @@ import {
   UpdateOfferDto,
 } from './dto/offer.dto';
 import { OFFER_SELECT_FIELDS } from './offer.constants';
-import { mapOfferToSummary, haversineDistance } from './offer.utils';
+import { mapOfferToSummary, haversineDistance, isOfferScheduleActive } from './offer.utils';
 
 // ─── Return types returned to mobile & web clients ──────────────────────────
 
@@ -104,8 +104,17 @@ export class OfferService {
     const qDistricts = query.q ? matchDistricts(query.q) : [];
     const locationDistricts = locationTerm ? matchDistricts(locationTerm) : [];
 
+    // Offer scheduling enforcement (Task 11): exclude offers whose
+    // validFrom/validUntil window does not contain "now". A null bound is
+    // unbounded. This is independent of the admin `isActive` toggle. Applied at
+    // the DB level so the paginated `total` stays consistent with the results.
+    const now = new Date();
     const where: Prisma.OfferWhereInput = {
       isActive: true,
+      AND: [
+        { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
+        { OR: [{ validUntil: null }, { validUntil: { gte: now } }] },
+      ],
       ...(query.merchantId && { merchantId: query.merchantId }),
       ...(query.category && {
         OR: [
@@ -182,8 +191,12 @@ export class OfferService {
       this.prisma.offer.count({ where }),
     ]);
 
+    // Belt-and-suspenders in-memory schedule filter using the shared helper
+    // (Task 11). The DB `where` above already excludes out-of-window offers so
+    // the count is consistent; this guards against any clock/timezone drift.
+    let filteredOffers = offers.filter((offer) => isOfferScheduleActive(offer));
+
     // Apply location filtering if coordinates and radius provided
-    let filteredOffers = offers;
     if (query.lat !== undefined && query.lng !== undefined && query.radiusKm) {
       filteredOffers = offers.filter((offer) => {
         return offer.merchant.branches.some((branch) => {

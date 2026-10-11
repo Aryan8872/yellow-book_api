@@ -211,7 +211,7 @@ export class MerchantController {
   @Get(':merchantId/analytics')
   @UseGuards(MerchantOwnershipGuard)
   @ApiOperation({ summary: 'Get merchant analytics data' })
-  @ApiQuery({ name: 'range', enum: ['7d', '30d', 'custom'], required: false, description: 'Time range: 7d, 30d, or custom' })
+  @ApiQuery({ name: 'range', enum: ['7d', '30d', '90d', 'custom'], required: false, description: 'Time range: 7d, 30d, 90d, or custom' })
   @ApiQuery({ name: 'startDate', required: false, description: 'Start date (ISO 8601) when range=custom' })
   @ApiQuery({ name: 'endDate', required: false, description: 'End date (ISO 8601) when range=custom' })
   @ApiOkResponse({
@@ -225,6 +225,139 @@ export class MerchantController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.merchantService.getMerchantAnalytics(merchantId, dto, user);
+  }
+
+  @Get(':merchantId/analytics/revenue')
+  @UseGuards(MerchantOwnershipGuard)
+  @ApiOperation({ summary: 'Get merchant revenue analytics' })
+  @ApiQuery({ name: 'range', enum: ['7d', '30d', '90d', 'custom'], required: false, description: 'Time range: 7d, 30d, 90d, or custom' })
+  @ApiQuery({ name: 'startDate', required: false, description: 'Start date (ISO 8601) when range=custom' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'End date (ISO 8601) when range=custom' })
+  @ApiOkResponse({
+    description: 'Revenue analytics including total revenue, by offer, by branch, and growth rates',
+  })
+  @ApiResponse({ status: 403, description: 'Not authorized to view this merchant analytics' })
+  @ApiResponse({ status: 404, description: 'Merchant not found' })
+  async getMerchantRevenueAnalytics(
+    @Param('merchantId') merchantId: string,
+    @Query() dto: TimeRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.merchantService.getMerchantRevenueAnalytics(merchantId, dto, user);
+  }
+
+  @Get(':merchantId/analytics/customers')
+  @UseGuards(MerchantOwnershipGuard)
+  @ApiOperation({ summary: 'Get merchant customer analytics' })
+  @ApiQuery({ name: 'range', enum: ['7d', '30d', '90d', 'custom'], required: false, description: 'Time range: 7d, 30d, 90d, or custom' })
+  @ApiQuery({ name: 'startDate', required: false, description: 'Start date (ISO 8601) when range=custom' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'End date (ISO 8601) when range=custom' })
+  @ApiOkResponse({
+    description: 'Customer analytics including new/returning customers, retention rate, and top customers',
+  })
+  @ApiResponse({ status: 403, description: 'Not authorized to view this merchant analytics' })
+  @ApiResponse({ status: 404, description: 'Merchant not found' })
+  async getMerchantCustomerAnalytics(
+    @Param('merchantId') merchantId: string,
+    @Query() dto: TimeRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.merchantService.getMerchantCustomerAnalytics(merchantId, dto, user);
+  }
+
+  @Get(':merchantId/analytics/offers')
+  @UseGuards(MerchantOwnershipGuard)
+  @ApiOperation({ summary: 'Get merchant offer performance analytics' })
+  @ApiQuery({ name: 'range', enum: ['7d', '30d', '90d', 'custom'], required: false, description: 'Time range: 7d, 30d, 90d, or custom' })
+  @ApiQuery({ name: 'startDate', required: false, description: 'Start date (ISO 8601) when range=custom' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'End date (ISO 8601) when range=custom' })
+  @ApiOkResponse({
+    description: 'Offer performance analytics including conversion rate, engagement, and top categories',
+  })
+  @ApiResponse({ status: 403, description: 'Not authorized to view this merchant analytics' })
+  @ApiResponse({ status: 404, description: 'Merchant not found' })
+  async getMerchantOfferPerformanceAnalytics(
+    @Param('merchantId') merchantId: string,
+    @Query() dto: TimeRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.merchantService.getMerchantOfferPerformanceAnalytics(merchantId, dto, user);
+  }
+
+  @Get(':merchantId/analytics/branches')
+  @UseGuards(MerchantOwnershipGuard)
+  @ApiOperation({ summary: 'Get merchant branch performance analytics' })
+  @ApiQuery({ name: 'range', enum: ['7d', '30d', '90d', 'custom'], required: false, description: 'Time range: 7d, 30d, 90d, or custom' })
+  @ApiQuery({ name: 'startDate', required: false, description: 'Start date (ISO 8601) when range=custom' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'End date (ISO 8601) when range=custom' })
+  @ApiOkResponse({
+    description: 'Branch performance analytics including comparison, trends, and staff efficiency',
+  })
+  @ApiResponse({ status: 403, description: 'Not authorized to view this merchant analytics' })
+  @ApiResponse({ status: 404, description: 'Merchant not found' })
+  async getMerchantBranchPerformanceAnalytics(
+    @Param('merchantId') merchantId: string,
+    @Query() dto: TimeRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.merchantService.getMerchantBranchPerformanceAnalytics(merchantId, dto, user);
+  }
+
+  @Get(':merchantId/analytics/time')
+  @UseGuards(MerchantOwnershipGuard)
+  @ApiOperation({ summary: 'Get merchant time-based analytics' })
+  @ApiQuery({ name: 'range', enum: ['7d', '30d', '90d', 'custom'], required: false, description: 'Time range: 7d, 30d, 90d, or custom' })
+  @ApiQuery({ name: 'startDate', required: false, description: 'Start date (ISO 8601) when range=custom' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'End date (ISO 8601) when range=custom' })
+  @ApiOkResponse({
+    description: 'Time-based analytics including hourly redemptions and day-of-week performance',
+  })
+  @ApiResponse({ status: 403, description: 'Not authorized to view this merchant analytics' })
+  @ApiResponse({ status: 404, description: 'Merchant not found' })
+  async getMerchantTimeBasedAnalytics(
+    @Param('merchantId') merchantId: string,
+    @Query() dto: TimeRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.merchantService.getMerchantTimeBasedAnalytics(merchantId, dto, user);
+  }
+
+  @Get(':merchantId/analytics/growth')
+  @UseGuards(MerchantOwnershipGuard)
+  @ApiOperation({ summary: 'Get merchant growth metrics' })
+  @ApiQuery({ name: 'range', enum: ['7d', '30d', '90d', 'custom'], required: false, description: 'Time range: 7d, 30d, 90d, or custom' })
+  @ApiQuery({ name: 'startDate', required: false, description: 'Start date (ISO 8601) when range=custom' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'End date (ISO 8601) when range=custom' })
+  @ApiOkResponse({
+    description: 'Growth metrics including MoM growth, YoY comparison, and projections',
+  })
+  @ApiResponse({ status: 403, description: 'Not authorized to view this merchant analytics' })
+  @ApiResponse({ status: 404, description: 'Merchant not found' })
+  async getMerchantGrowthMetrics(
+    @Param('merchantId') merchantId: string,
+    @Query() dto: TimeRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.merchantService.getMerchantGrowthMetrics(merchantId, dto, user);
+  }
+
+  @Get(':merchantId/analytics/categories')
+  @UseGuards(MerchantOwnershipGuard)
+  @ApiOperation({ summary: 'Get merchant category analytics' })
+  @ApiQuery({ name: 'range', enum: ['7d', '30d', '90d', 'custom'], required: false, description: 'Time range: 7d, 30d, 90d, or custom' })
+  @ApiQuery({ name: 'startDate', required: false, description: 'Start date (ISO 8601) when range=custom' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'End date (ISO 8601) when range=custom' })
+  @ApiOkResponse({
+    description: 'Category analytics including ranking, trends, and cross-category behavior',
+  })
+  @ApiResponse({ status: 403, description: 'Not authorized to view this merchant analytics' })
+  @ApiResponse({ status: 404, description: 'Merchant not found' })
+  async getMerchantCategoryAnalytics(
+    @Param('merchantId') merchantId: string,
+    @Query() dto: TimeRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.merchantService.getMerchantCategoryAnalytics(merchantId, dto, user);
   }
 
   @Get(':merchantId/redemptions')

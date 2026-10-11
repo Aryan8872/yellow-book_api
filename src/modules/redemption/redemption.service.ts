@@ -8,13 +8,14 @@ import {
   Logger,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { Prisma, RedemptionStatus } from '@prisma/client';
+import { Prisma, RedemptionStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DistributedLockService } from '../../infrastructure/redis/distributed-lock.service';
 import { MetricsService } from '../../infrastructure/metrics/metrics.service';
 import {
   RedeemInitDto,
   MerchantRedeemDto,
+  VerifyQrDto,
 } from './dto/redemption.dto';
 import { AuthenticatedUser } from '../auth/auth.types';
 import { REDEMPTION_CONSTANTS } from './redemption.constants';
@@ -22,6 +23,8 @@ import {
   generateRedemptionCode,
   calculateRemainingSeconds,
   generateQrPayload,
+  extractRedemptionCode,
+  renderQrDataUrl,
   getRedemptionLockKey,
 } from './redemption.utils';
 import { ListRedemptionsDto } from '../admin/dto/list-redemptions.dto';
@@ -276,6 +279,23 @@ export class RedemptionService {
           status: 'SUCCESS',
         });
 
+        // Staff activity audit (Task 10). Existing code+PIN flow is unchanged;
+        // we only record who confirmed the redemption.
+        await this.writeStaffAudit(
+          merchantUser.id,
+          'redeem',
+          {
+            entity: 'RedemptionSession',
+            entityId: updated.id,
+            merchantId: session.offer.merchant.id,
+          },
+          {
+            via: 'merchant_pin',
+            offerId: session.offer.id,
+            staffId: dto.staffId ?? null,
+          },
+        );
+
         return {
           success: true,
           redemptionId: updated.id,
@@ -286,6 +306,140 @@ export class RedemptionService {
         };
       },
     );
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Step 2b: Staff scans customer QR (no merchant PIN required)
+  // ─────────────────────────────────────────────────────────────────
+
+  async verifyQrRedemption(
+    staffUser: AuthenticatedUser,
+    dto: VerifyQrDto,
+  ): Promise<MerchantRedeemResult> {
+    const code = extractRedemptionCode(dto.qrPayload);
+
+    const session = await this.prisma.redemptionSession.findUnique({
+      where: { code },
+      include: {
+        offer: {
+          select: {
+            id: true,
+            title: true,
+            merchant: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Invalid or expired QR code');
+    }
+
+    // Expiry check (mirrors merchantRedeem)
+    if (session.codeExpiresAt.getTime() < Date.now()) {
+      this.prisma.redemptionSession
+        .update({
+          where: { id: session.id },
+          data: { status: RedemptionStatus.EXPIRED },
+        })
+        .catch((err) => this.logger.error('Failed to expire session', err));
+
+      this.metrics.activeRedemptionSessions.dec();
+      throw new BadRequestException(
+        'Redemption code has expired. Please ask customer to regenerate.',
+      );
+    }
+
+    // Single-use / status check
+    if (session.status !== RedemptionStatus.INIT) {
+      throw new ConflictException(
+        `This voucher session has already been processed with status: ${session.status}`,
+      );
+    }
+
+    // Staff authorization (replaces the merchant PIN used by merchantRedeem):
+    // the caller must be an active staff member of the session's merchant,
+    // hold the `redeem` permission, and (when a branchId is provided) that
+    // branch must belong to the same merchant.
+    const staff = await this.assertStaffCanRedeem(
+      staffUser,
+      session.offer.merchant.id,
+      dto.branchId,
+    );
+
+    // Distributed lock to prevent double-spend race conditions
+    return this.lockService.runWithLock(
+      getRedemptionLockKey(session.id),
+      REDEMPTION_CONSTANTS.LOCK_TTL_MS,
+      async () => {
+        // Re-read status inside lock
+        const fresh = await this.prisma.redemptionSession.findUnique({
+          where: { id: session.id },
+          select: { status: true },
+        });
+
+        if (fresh?.status !== RedemptionStatus.INIT) {
+          throw new ConflictException('Voucher has already been redeemed.');
+        }
+
+        const redeemedAt = new Date();
+
+        const updated = await this.prisma.redemptionSession.update({
+          where: { id: session.id },
+          data: {
+            status: RedemptionStatus.REDEEMED,
+            redeemedAt,
+            staffId: staff.id,
+            ...(dto.branchId ? { branchId: dto.branchId } : {}),
+          },
+        });
+
+        this.metrics.activeRedemptionSessions.dec();
+        this.metrics.redemptionsTotal.inc({
+          merchant_id: session.offer.merchant.id,
+          status: 'SUCCESS',
+        });
+
+        // Staff activity audit (Task 10)
+        await this.writeStaffAudit(
+          staffUser.id,
+          'redeem',
+          {
+            entity: 'RedemptionSession',
+            entityId: updated.id,
+            merchantId: session.offer.merchant.id,
+          },
+          {
+            via: 'staff_qr',
+            offerId: session.offer.id,
+            staffId: staff.id,
+            branchId: dto.branchId ?? null,
+          },
+        );
+
+        return {
+          success: true,
+          redemptionId: updated.id,
+          redeemedAt: redeemedAt.toISOString(),
+          savingsNpr: Number(updated.savingsNpr),
+          offerTitle: session.offer.title,
+          merchantName: session.offer.merchant.name,
+        };
+      },
+    );
+  }
+
+  /**
+   * Renders a QR payload string into a scannable PNG data URL (Task 13).
+   * Thin wrapper so both the customer wallet and staff scanner can obtain an
+   * image rather than only the raw payload string.
+   */
+  async renderQrImage(payload: string): Promise<{ dataUrl: string }> {
+    if (!payload || !payload.trim()) {
+      throw new BadRequestException('payload query parameter is required');
+    }
+    const dataUrl = await renderQrDataUrl(payload.trim());
+    return { dataUrl };
   }
 
   async listRedemptions(dto: ListRedemptionsDto) {
@@ -383,4 +537,116 @@ export class RedemptionService {
   // ─────────────────────────────────────────────────────────────────
   // Private Helpers
   // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Writes a row into the existing AuditLog model (Task 10). Mirrors the
+   * admin.service.ts audit pattern. Audit failures are logged and swallowed so
+   * they never break the primary redemption flow.
+   *
+   * @param actorUserId - The acting user id (AuditLog.actorId -> User.id)
+   * @param action      - Action verb, e.g. 'redeem' | 'update_permissions'
+   * @param target      - { entity, entityId, merchantId? } describing the record
+   * @param meta        - Arbitrary context stored in AuditLog.metadata
+   */
+  private async writeStaffAudit(
+    actorUserId: string,
+    action: string,
+    target: { entity: string; entityId: string; merchantId?: string },
+    meta: Record<string, unknown> = {},
+  ): Promise<void> {
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: target.entity,
+          entityId: target.entityId,
+          action,
+          actorId: actorUserId,
+          merchantId: target.merchantId ?? null,
+          metadata:
+            meta && Object.keys(meta).length > 0
+              ? (meta as Prisma.InputJsonValue)
+              : undefined,
+        },
+      });
+    } catch (err) {
+      this.logger.error('Failed to write staff audit log', err);
+    }
+  }
+
+  /**
+   * Authorizes a staff user to redeem a voucher for `merchantId` (Task 14).
+   * Replaces the merchant-PIN gate used by the legacy `merchantRedeem` flow.
+   * Returns the staff row (its id is stored on the RedemptionSession).
+   */
+  private async assertStaffCanRedeem(
+    staffUser: AuthenticatedUser,
+    merchantId: string,
+    branchId?: string,
+  ) {
+    const staff = await this.prisma.merchantStaff.findUnique({
+      where: { userId: staffUser.id },
+      select: {
+        id: true,
+        merchantId: true,
+        isActive: true,
+        role: true,
+        permissions: true,
+      },
+    });
+
+    if (!staff || !staff.isActive) {
+      this.metrics.fraudFlagsTotal.inc({
+        reason: 'UNAUTHORIZED_STAFF',
+        severity: 'MEDIUM',
+      });
+      throw new ForbiddenException(
+        'Authenticated user is not an active staff member of this merchant',
+      );
+    }
+
+    if (staff.merchantId !== merchantId) {
+      this.metrics.fraudFlagsTotal.inc({
+        reason: 'STAFF_WRONG_MERCHANT',
+        severity: 'HIGH',
+      });
+      throw new ForbiddenException(
+        'Staff does not belong to the merchant that owns this voucher',
+      );
+    }
+
+    // `redeem` capability. Platform/merchant admins implicitly hold it so we do
+    // not have to backfill their permissions[] array (documented decision).
+    const isPrivileged =
+      staffUser.role === UserRole.ADMIN ||
+      staffUser.role === UserRole.MERCHANT_ADMIN ||
+      staff.role === UserRole.MERCHANT_ADMIN;
+    const hasRedeem =
+      isPrivileged || (staff.permissions ?? []).includes('redeem');
+
+    if (!hasRedeem) {
+      this.metrics.fraudFlagsTotal.inc({
+        reason: 'MISSING_REDEEM_PERMISSION',
+        severity: 'MEDIUM',
+      });
+      throw new ForbiddenException(
+        'Staff does not have the "redeem" permission',
+      );
+    }
+
+    // MerchantStaff is not branch-assigned in the schema, so when a branchId is
+    // supplied we verify it belongs to the same merchant as the staff.
+    if (branchId) {
+      const branch = await this.prisma.merchantBranch.findUnique({
+        where: { id: branchId },
+        select: { merchantId: true },
+      });
+      if (!branch || branch.merchantId !== staff.merchantId) {
+        throw new ForbiddenException(
+          'Provided branch does not belong to this merchant',
+        );
+      }
+    }
+
+    return staff;
+  }
 }

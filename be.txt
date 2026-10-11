@@ -1,0 +1,29 @@
+[31m[Nest] 11276  - [39m10/10/2026, 4:57:12 PM [31m  ERROR[39m [38;5;3m[AuthService] [39m[31mFailed to delete refresh token from database for user non-existent-user[39m
+[31m[Nest] 11276  - [39m10/10/2026, 4:57:12 PM [31m  ERROR[39m [38;5;3m[AuthService] [39mError: User not found
+    at Object.<anonymous> [90m(E:\flutter\OfferNepal\api\offernepal\[39msrc\modules\auth\auth.service.spec.ts:298:9[90m)[39m
+    at Promise.finally.completed [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-circus[24m\build\jestAdapterInit.js:1834:28[90m)[39m
+    at new Promise (<anonymous>)
+    at callAsyncCircusFn [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-circus[24m\build\jestAdapterInit.js:1774:10[90m)[39m
+    at _callCircusTest [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-circus[24m\build\jestAdapterInit.js:1167:40[90m)[39m
+    at _runTestInContext [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-circus[24m\build\jestAdapterInit.js:1103:3[90m)[39m
+    at runTestWithContext [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-circus[24m\build\jestAdapterInit.js:996:5[90m)[39m
+    at _runTestsForDescribeBlockOnce [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-circus[24m\build\jestAdapterInit.js:1008:11[90m)[39m
+    at _runTestsForDescribeBlock [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-circus[24m\build\jestAdapterInit.js:824:5[90m)[39m
+    at _runTestsForDescribeBlockOnce [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-circus[24m\build\jestAdapterInit.js:1003:11[90m)[39m
+    at _runTestsForDescribeBlock [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-circus[24m\build\jestAdapterInit.js:824:5[90m)[39m
+    at _runTestsForDescribeBlockOnce [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-circus[24m\build\jestAdapterInit.js:1003:11[90m)[39m
+    at _runTestsForDescribeBlock [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-circus[24m\build\jestAdapterInit.js:824:5[90m)[39m
+    at run [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-circus[24m\build\jestAdapterInit.js:789:3[90m)[39m
+    at runAndTransformResultsToJestFormat [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-circus[24m\build\jestAdapterInit.js:2300:21[90m)[39m
+    at jestAdapter [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-circus[24m\build\runner.js:111:19[90m)[39m
+    at runTestInternal [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-runner[24m\build\index.js:247:16[90m)[39m
+    at runTest [90m(E:\flutter\OfferNepal\api\offernepal\[39mnode_modules\[4mjest-runner[24m\build\index.js:315:7[90m)[39m
+PASS src/modules/auth/auth.service.spec.ts
+PASS src/modules/redemption/redemption.service.spec.ts
+PASS src/modules/offer/offer.service.spec.ts
+PASS src/app.controller.spec.ts
+
+Test Suites: 4 passed, 4 total
+Tests:       36 passed, 36 total
+Snapshots:   0 total
+Time:        4.564 s

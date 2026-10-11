@@ -3,6 +3,7 @@
  * Helper functions for redemption operations
  */
 
+import * as QRCode from 'qrcode';
 import { REDEMPTION_CONSTANTS } from './redemption.constants';
 
 /**
@@ -41,6 +42,53 @@ export function calculateRemainingSeconds(expiresAt: Date): number {
  */
 export function generateQrPayload(code: string): string {
   return `offernepal://redeem?code=${code}`;
+}
+
+/**
+ * QR PAYLOAD FORMAT (documented after reading generateQrPayload):
+ *   `offernepal://redeem?code=NF-XXXXXX`
+ * The payload is a plain deep-link that carries ONLY the redemption code as a
+ * `code` query parameter. There is NO signature / HMAC in the payload, so
+ * verification is by looking up the code in the `RedemptionSession` table
+ * (which is authoritative) rather than by validating a signature. This function
+ * is the exact inverse of `generateQrPayload`.
+ *
+ * For resilience it also accepts a bare code (e.g. "NF-7821AB") and normalises
+ * the result to upper-case to match `merchantRedeem`'s code handling.
+ *
+ * @param qrPayload - The scanned QR payload (or bare code)
+ * @returns The normalised redemption code
+ */
+export function extractRedemptionCode(qrPayload: string): string {
+  const trimmed = (qrPayload ?? '').trim();
+  if (!trimmed) {
+    throw new Error('Empty QR payload');
+  }
+
+  const match = trimmed.match(/[?&]code=([^&\s]+)/i);
+  if (match) {
+    return decodeURIComponent(match[1]).toUpperCase();
+  }
+
+  // Fallback: treat the whole payload as a bare code.
+  return trimmed.toUpperCase();
+}
+
+/**
+ * Renders a QR payload string into a scannable PNG data URL using the `qrcode`
+ * library. qrcode@1.5.4 ships a CommonJS build (`main: ./lib/index.js`, no
+ * `"type": "module"`), so this static import compiles to `require('qrcode')`
+ * and works under both the NestJS CommonJS runtime and ts-jest (mockable).
+ *
+ * @param payload - The string to encode (typically the output of generateQrPayload)
+ * @returns A base64 PNG data URL, e.g. `data:image/png;base64,...`
+ */
+export async function renderQrDataUrl(payload: string): Promise<string> {
+  return QRCode.toDataURL(payload, {
+    errorCorrectionLevel: 'M',
+    margin: 1,
+    width: 320,
+  });
 }
 
 /**

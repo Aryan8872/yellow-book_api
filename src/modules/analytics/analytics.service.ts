@@ -21,6 +21,10 @@ export class AnalyticsService {
       startDate = new Date(now);
       startDate.setDate(startDate.getDate() - 30);
       startDate.setHours(0, 0, 0, 0);
+    } else if (dto.range === TimeRange.LAST_90_DAYS) {
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 90);
+      startDate.setHours(0, 0, 0, 0);
     } else if (dto.range === TimeRange.CUSTOM) {
       if (!dto.startDate || !dto.endDate) {
         throw new BadRequestException('Custom range requires startDate and endDate');
@@ -269,6 +273,771 @@ export class AnalyticsService {
     return {
       labels: dates,
       datasets,
+    };
+  }
+
+  // Platform-wide analytics methods for admin panel
+
+  async getPlatformRevenueAnalytics(dto: TimeRangeDto) {
+    const { startDate, endDate } = this.getTimeRange(dto);
+
+    const totalRevenueResult = await this.prisma.$queryRaw<Array<{ totalRevenue: bigint }>>`
+      SELECT COALESCE(SUM(o."originalPriceNpr"), 0) as "totalRevenue"
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+    `;
+
+    const totalRevenue = Number(totalRevenueResult[0]?.totalRevenue || 0);
+
+    const revenueByMerchant = await this.prisma.$queryRaw<Array<{
+      merchantId: string;
+      merchantName: string;
+      revenue: bigint;
+      redemptionCount: bigint;
+    }>>`
+      SELECT 
+        m.id as "merchantId",
+        m.name as "merchantName",
+        COALESCE(SUM(o."originalPriceNpr"), 0) as revenue,
+        COUNT(rs.id) as "redemptionCount"
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      JOIN merchants m ON o."merchantId" = m.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY m.id, m.name
+      ORDER BY revenue DESC
+      LIMIT 10
+    `;
+
+    const revenueByCategory = await this.prisma.$queryRaw<Array<{
+      categoryId: string;
+      categoryName: string;
+      revenue: bigint;
+      redemptionCount: bigint;
+    }>>`
+      SELECT 
+        c.id as "categoryId",
+        c.name as "categoryName",
+        COALESCE(SUM(o."originalPriceNpr"), 0) as revenue,
+        COUNT(rs.id) as "redemptionCount"
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      JOIN categories c ON o."categoryId" = c.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY c.id, c.name
+      ORDER BY revenue DESC
+    `;
+
+    const avgOrderValueResult = await this.prisma.$queryRaw<Array<{ avgOrderValue: bigint }>>`
+      SELECT COALESCE(AVG(o."originalPriceNpr"), 0) as "avgOrderValue"
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+        AND o."originalPriceNpr" IS NOT NULL
+    `;
+
+    const averageOrderValue = Number(avgOrderValueResult[0]?.avgOrderValue || 0);
+
+    const now = new Date();
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+    const lastYearStart = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+    const lastYearEnd = new Date(now.getFullYear() - 1, now.getMonth() + 1, 0);
+
+    const lastMonthRevenue = await this.prisma.$queryRaw<Array<{ revenue: bigint }>>`
+      SELECT COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${lastMonthStart}
+        AND rs."redeemedAt" <= ${lastMonthEnd}
+    `;
+
+    const lastYearRevenue = await this.prisma.$queryRaw<Array<{ revenue: bigint }>>`
+      SELECT COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${lastYearStart}
+        AND rs."redeemedAt" <= ${lastYearEnd}
+    `;
+
+    const mom = Number(lastMonthRevenue[0]?.revenue || 0) > 0
+      ? ((totalRevenue - Number(lastMonthRevenue[0]?.revenue || 0)) / Number(lastMonthRevenue[0]?.revenue || 1)) * 100
+      : 0;
+    const yoy = Number(lastYearRevenue[0]?.revenue || 0) > 0
+      ? ((totalRevenue - Number(lastYearRevenue[0]?.revenue || 0)) / Number(lastYearRevenue[0]?.revenue || 1)) * 100
+      : 0;
+
+    const revenueTrend = await this.prisma.$queryRaw<Array<{ date: string; revenue: bigint }>>`
+      SELECT 
+        DATE(rs."redeemedAt") as date,
+        COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY DATE(rs."redeemedAt")
+      ORDER BY date ASC
+    `;
+
+    return {
+      totalRevenue,
+      revenueByMerchant: revenueByMerchant.map(r => ({
+        merchantId: r.merchantId,
+        merchantName: r.merchantName,
+        revenue: Number(r.revenue),
+        redemptionCount: Number(r.redemptionCount),
+      })),
+      revenueByCategory: revenueByCategory.map(r => ({
+        categoryId: r.categoryId,
+        categoryName: r.categoryName,
+        revenue: Number(r.revenue),
+        redemptionCount: Number(r.redemptionCount),
+      })),
+      averageOrderValue,
+      revenueGrowth: { mom, yoy },
+      revenueTrend: revenueTrend.map(r => ({
+        date: r.date,
+        revenue: Number(r.revenue),
+      })),
+    };
+  }
+
+  async getPlatformCustomerAnalytics(dto: TimeRangeDto) {
+    const { startDate, endDate } = this.getTimeRange(dto);
+
+    const totalUsers = await this.prisma.user.count({ where: { isActive: true } });
+    const activeUsers = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(DISTINCT rs."userId") as count
+      FROM "redemption_sessions" rs
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+    `;
+
+    const newUsersResult = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(DISTINCT rs."userId") as count
+      FROM "redemption_sessions" rs
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+        AND rs."userId" NOT IN (
+          SELECT DISTINCT rs2."userId"
+          FROM "redemption_sessions" rs2
+          WHERE rs2.status = 'REDEEMED'
+            AND rs2."redeemedAt" < ${startDate}
+        )
+    `;
+
+    const returningUsersResult = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(DISTINCT rs."userId") as count
+      FROM "redemption_sessions" rs
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+        AND rs."userId" IN (
+          SELECT DISTINCT rs2."userId"
+          FROM "redemption_sessions" rs2
+          WHERE rs2.status = 'REDEEMED'
+            AND rs2."redeemedAt" < ${startDate}
+        )
+    `;
+
+    const newUsers = Number(newUsersResult[0]?.count || 0);
+    const returningUsers = Number(returningUsersResult[0]?.count || 0);
+    const activeUsersCount = Number(activeUsers[0]?.count || 0);
+    const userRetentionRate = activeUsersCount > 0 ? (returningUsers / activeUsersCount) * 100 : 0;
+
+    const topUsers = await this.prisma.$queryRaw<Array<{
+      userId: string;
+      userName: string;
+      userEmail: string;
+      redemptionCount: bigint;
+      totalSpent: bigint;
+    }>>`
+      SELECT 
+        u.id as "userId",
+        u.name as "userName",
+        u.email as "userEmail",
+        COUNT(rs.id) as "redemptionCount",
+        COALESCE(SUM(o."originalPriceNpr"), 0) as "totalSpent"
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      JOIN users u ON rs."userId" = u.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY u.id, u.name, u.email
+      ORDER BY "redemptionCount" DESC
+      LIMIT 10
+    `;
+
+    const userAcquisitionTrend = await this.prisma.$queryRaw<Array<{ date: string; newUsers: bigint }>>`
+      SELECT 
+        DATE(rs."redeemedAt") as date,
+        COUNT(DISTINCT rs."userId") as "newUsers"
+      FROM "redemption_sessions" rs
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY DATE(rs."redeemedAt")
+      ORDER BY date ASC
+    `;
+
+    const geographicDistribution = await this.prisma.$queryRaw<Array<{ city: string; userCount: bigint }>>`
+      SELECT 
+        u.city,
+        COUNT(DISTINCT u.id) as "userCount"
+      FROM "redemption_sessions" rs
+      JOIN users u ON rs."userId" = u.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+        AND u.city IS NOT NULL
+      GROUP BY u.city
+      ORDER BY "userCount" DESC
+      LIMIT 10
+    `;
+
+    return {
+      totalUsers,
+      activeUsers: activeUsersCount,
+      newUsers,
+      returningUsers,
+      userRetentionRate,
+      topUsers: topUsers.map(c => ({
+        userId: c.userId,
+        userName: c.userName,
+        userEmail: c.userEmail,
+        redemptionCount: Number(c.redemptionCount),
+        totalSpent: Number(c.totalSpent),
+      })),
+      userAcquisitionTrend: userAcquisitionTrend.map(c => ({
+        date: c.date,
+        newUsers: Number(c.newUsers),
+      })),
+      geographicDistribution: geographicDistribution.map(g => ({
+        city: g.city,
+        userCount: Number(g.userCount),
+      })),
+    };
+  }
+
+  async getPlatformOfferPerformanceAnalytics(dto: TimeRangeDto) {
+    const { startDate, endDate } = this.getTimeRange(dto);
+
+    const totalOffers = await this.prisma.offer.count({ where: { isActive: true } });
+    const activeOffers = await this.prisma.offer.count({ where: { isActive: true, validUntil: { gte: new Date() } } });
+
+    const totalRedemptions = await this.prisma.redemptionSession.count({
+      where: { status: 'REDEEMED', redeemedAt: { gte: startDate, lte: endDate } },
+    });
+
+    const totalViews = await this.prisma.offer.aggregate({
+      _sum: { viewCount: true },
+    });
+
+    const totalViewCount = Number(totalViews._sum.viewCount || 0);
+    const conversionRate = totalViewCount > 0 ? (totalRedemptions / totalViewCount) * 100 : 0;
+    const engagementRate = totalViewCount > 0 ? (totalRedemptions / totalViewCount) * 100 : 0;
+
+    const avgDiscountResult = await this.prisma.$queryRaw<Array<{ avgDiscount: bigint }>>`
+      SELECT COALESCE(AVG(o."originalPriceNpr" - o."discountedPriceNpr"), 0) as "avgDiscount"
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+    `;
+
+    const averageDiscountValue = Number(avgDiscountResult[0]?.avgDiscount || 0);
+
+    const topCategories = await this.prisma.$queryRaw<Array<{
+      categoryId: string;
+      categoryName: string;
+      redemptionCount: bigint;
+      revenue: bigint;
+    }>>`
+      SELECT 
+        c.id as "categoryId",
+        c.name as "categoryName",
+        COUNT(rs.id) as "redemptionCount",
+        COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      JOIN categories c ON o."categoryId" = c.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY c.id, c.name
+      ORDER BY "redemptionCount" DESC
+      LIMIT 10
+    `;
+
+    const expiredOffers = await this.prisma.offer.count({
+      where: { validUntil: { lt: new Date() } },
+    });
+
+    const nearExpiringOffers = await this.prisma.offer.count({
+      where: {
+        validUntil: {
+          gte: new Date(),
+          lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      },
+    });
+
+    const expiredRedemptions = await this.prisma.redemptionSession.count({
+      where: { status: 'EXPIRED', createdAt: { gte: startDate, lte: endDate } },
+    });
+
+    return {
+      totalOffers,
+      activeOffers,
+      conversionRate,
+      averageDiscountValue,
+      engagementRate,
+      topCategories: topCategories.map(c => ({
+        categoryId: c.categoryId,
+        categoryName: c.categoryName,
+        redemptionCount: Number(c.redemptionCount),
+        revenue: Number(c.revenue),
+      })),
+      expirationImpact: [
+        { expiredOffers, nearExpiringOffers, expiredRedemptions },
+      ],
+    };
+  }
+
+  async getPlatformMerchantPerformanceAnalytics(dto: TimeRangeDto) {
+    const { startDate, endDate } = this.getTimeRange(dto);
+
+    const totalMerchants = await this.prisma.merchant.count();
+    const activeMerchants = await this.prisma.merchant.count({ where: { status: 'ACTIVE' } });
+    const pendingMerchants = await this.prisma.merchant.count({ where: { status: 'PENDING_REVIEW' } });
+
+    const merchantComparison = await this.prisma.$queryRaw<Array<{
+      merchantId: string;
+      merchantName: string;
+      totalRedemptions: bigint;
+      totalRevenue: bigint;
+      activeOffers: bigint;
+    }>>`
+      SELECT 
+        m.id as "merchantId",
+        m.name as "merchantName",
+        COUNT(rs.id) as "totalRedemptions",
+        COALESCE(SUM(o."originalPriceNpr"), 0) as "totalRevenue",
+        COUNT(DISTINCT o.id) as "activeOffers"
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      JOIN merchants m ON o."merchantId" = m.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY m.id, m.name
+      ORDER BY "totalRedemptions" DESC
+    `;
+
+    const mostActiveMerchant = await this.prisma.$queryRaw<Array<{
+      merchantId: string;
+      merchantName: string;
+      redemptionCount: bigint;
+    }>>`
+      SELECT 
+        m.id as "merchantId",
+        m.name as "merchantName",
+        COUNT(rs.id) as "redemptionCount"
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      JOIN merchants m ON o."merchantId" = m.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY m.id, m.name
+      ORDER BY "redemptionCount" DESC
+      LIMIT 1
+    `;
+
+    const leastActiveMerchant = await this.prisma.$queryRaw<Array<{
+      merchantId: string;
+      merchantName: string;
+      redemptionCount: bigint;
+    }>>`
+      SELECT 
+        m.id as "merchantId",
+        m.name as "merchantName",
+        COUNT(rs.id) as "redemptionCount"
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      JOIN merchants m ON o."merchantId" = m.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY m.id, m.name
+      ORDER BY "redemptionCount" ASC
+      LIMIT 1
+    `;
+
+    const merchantTrends = await this.prisma.$queryRaw<Array<{
+      merchantId: string;
+      merchantName: string;
+      date: string;
+      redemptionCount: bigint;
+    }>>`
+      SELECT 
+        m.id as "merchantId",
+        m.name as "merchantName",
+        DATE(rs."redeemedAt") as date,
+        COUNT(rs.id) as "redemptionCount"
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      JOIN merchants m ON o."merchantId" = m.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY m.id, m.name, DATE(rs."redeemedAt")
+      ORDER BY date ASC
+    `;
+
+    return {
+      totalMerchants,
+      activeMerchants,
+      pendingMerchants,
+      merchantComparison: merchantComparison.map(b => ({
+        merchantId: b.merchantId,
+        merchantName: b.merchantName,
+        totalRedemptions: Number(b.totalRedemptions),
+        totalRevenue: Number(b.totalRevenue),
+        activeOffers: Number(b.activeOffers),
+      })),
+      mostActiveMerchant: mostActiveMerchant[0] ? {
+        merchantId: mostActiveMerchant[0].merchantId,
+        merchantName: mostActiveMerchant[0].merchantName,
+        redemptionCount: Number(mostActiveMerchant[0].redemptionCount),
+      } : null,
+      leastActiveMerchant: leastActiveMerchant[0] ? {
+        merchantId: leastActiveMerchant[0].merchantId,
+        merchantName: leastActiveMerchant[0].merchantName,
+        redemptionCount: Number(leastActiveMerchant[0].redemptionCount),
+      } : null,
+      merchantTrends: merchantTrends.map(t => ({
+        merchantId: t.merchantId,
+        merchantName: t.merchantName,
+        date: t.date,
+        redemptionCount: Number(t.redemptionCount),
+      })),
+    };
+  }
+
+  async getPlatformTimeBasedAnalytics(dto: TimeRangeDto) {
+    const { startDate, endDate } = this.getTimeRange(dto);
+
+    const hourlyRedemptions = await this.prisma.$queryRaw<Array<{ hour: number; redemptionCount: bigint }>>`
+      SELECT 
+        EXTRACT(HOUR FROM rs."redeemedAt") as hour,
+        COUNT(*) as "redemptionCount"
+      FROM "redemption_sessions" rs
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY EXTRACT(HOUR FROM rs."redeemedAt")
+      ORDER BY hour ASC
+    `;
+
+    const dayOfWeekPerformance = await this.prisma.$queryRaw<Array<{
+      day: string;
+      redemptionCount: bigint;
+      revenue: bigint;
+    }>>`
+      SELECT 
+        TO_CHAR(rs."redeemedAt", 'Day') as day,
+        COUNT(*) as "redemptionCount",
+        COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY TO_CHAR(rs."redeemedAt", 'Day')
+      ORDER BY "redemptionCount" DESC
+    `;
+
+    const seasonalTrends = await this.prisma.$queryRaw<Array<{
+      month: string;
+      redemptionCount: bigint;
+      revenue: bigint;
+    }>>`
+      SELECT 
+        TO_CHAR(rs."redeemedAt", 'Mon') as month,
+        COUNT(*) as "redemptionCount",
+        COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY TO_CHAR(rs."redeemedAt", 'Mon')
+      ORDER BY month ASC
+    `;
+
+    return {
+      hourlyRedemptions: hourlyRedemptions.map(h => ({
+        hour: Number(h.hour),
+        redemptionCount: Number(h.redemptionCount),
+      })),
+      dayOfWeekPerformance: dayOfWeekPerformance.map(d => ({
+        day: d.day.trim(),
+        redemptionCount: Number(d.redemptionCount),
+        revenue: Number(d.revenue),
+      })),
+      seasonalTrends: seasonalTrends.map(s => ({
+        month: s.month,
+        redemptionCount: Number(s.redemptionCount),
+        revenue: Number(s.revenue),
+      })),
+    };
+  }
+
+  async getPlatformGrowthMetrics(dto: TimeRangeDto) {
+    const { startDate, endDate } = this.getTimeRange(dto);
+
+    const momGrowth = await this.prisma.$queryRaw<Array<{
+      date: string;
+      redemptions: bigint;
+      revenue: bigint;
+      prev_revenue: bigint | null;
+      growthRate: number;
+    }>>`
+      WITH monthly_data AS (
+        SELECT 
+          DATE_TRUNC('month', rs."redeemedAt") as month,
+          COUNT(*) as redemptions,
+          COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+        FROM "redemption_sessions" rs
+        JOIN offers o ON rs."offerId" = o.id
+        WHERE rs.status = 'REDEEMED'
+          AND rs."redeemedAt" >= ${startDate}
+          AND rs."redeemedAt" <= ${endDate}
+        GROUP BY DATE_TRUNC('month', rs."redeemedAt")
+      )
+      SELECT 
+        TO_CHAR(month, 'YYYY-MM') as date,
+        redemptions,
+        revenue,
+        LAG(revenue) OVER (ORDER BY month) as prev_revenue
+      FROM monthly_data
+      ORDER BY month ASC
+    `;
+
+    const momGrowthWithRate = momGrowth.map((m, i) => ({
+      date: m.date,
+      redemptions: Number(m.redemptions),
+      revenue: Number(m.revenue),
+      growthRate: i > 0 && Number(m.prev_revenue) > 0
+        ? ((Number(m.revenue) - Number(m.prev_revenue)) / Number(m.prev_revenue)) * 100
+        : 0,
+    }));
+
+    const yoyComparison = await this.prisma.$queryRaw<Array<{
+      year: number;
+      redemptions: bigint;
+      revenue: bigint;
+      prev_revenue: bigint | null;
+      growthRate: number;
+    }>>`
+      WITH yearly_data AS (
+        SELECT 
+          EXTRACT(YEAR FROM rs."redeemedAt") as year,
+          COUNT(*) as redemptions,
+          COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+        FROM "redemption_sessions" rs
+        JOIN offers o ON rs."offerId" = o.id
+        WHERE rs.status = 'REDEEMED'
+          AND rs."redeemedAt" >= ${startDate}
+          AND rs."redeemedAt" <= ${endDate}
+        GROUP BY EXTRACT(YEAR FROM rs."redeemedAt")
+      )
+      SELECT 
+        year,
+        redemptions,
+        revenue,
+        LAG(revenue) OVER (ORDER BY year) as prev_revenue
+      FROM yearly_data
+      ORDER BY year ASC
+    `;
+
+    const yoyComparisonWithRate = yoyComparison.map((y, i) => ({
+      year: Number(y.year),
+      redemptions: Number(y.redemptions),
+      revenue: Number(y.revenue),
+      growthRate: i > 0 && Number(y.prev_revenue) > 0
+        ? ((Number(y.revenue) - Number(y.prev_revenue)) / Number(y.prev_revenue)) * 100
+        : 0,
+    }));
+
+    const recentRedemptions = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*) as count
+      FROM "redemption_sessions" rs
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+    `;
+
+    const recentRevenue = await this.prisma.$queryRaw<Array<{ revenue: bigint }>>`
+      SELECT COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+    `;
+
+    const daysInRange = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const avgDailyRedemptions = Number(recentRedemptions[0]?.count || 0) / daysInRange;
+    const avgDailyRevenue = Number(recentRevenue[0]?.revenue || 0) / daysInRange;
+
+    const projections: Array<{
+      date: string;
+      projectedRedemptions: number;
+      projectedRevenue: number;
+    }> = [];
+    for (let i = 1; i <= 30; i++) {
+      const futureDate = new Date(endDate);
+      futureDate.setDate(futureDate.getDate() + i);
+      projections.push({
+        date: futureDate.toISOString().split('T')[0],
+        projectedRedemptions: Math.round(avgDailyRedemptions * i),
+        projectedRevenue: Math.round(avgDailyRevenue * i),
+      });
+    }
+
+    const totalRedemptions = await this.prisma.redemptionSession.count({
+      where: { status: 'REDEEMED' },
+    });
+
+    const milestones = [
+      { milestone: '1000 Redemptions', achieved: totalRedemptions >= 1000 },
+      { milestone: '5000 Redemptions', achieved: totalRedemptions >= 5000 },
+      { milestone: '10000 Redemptions', achieved: totalRedemptions >= 10000 },
+      { milestone: '50000 Redemptions', achieved: totalRedemptions >= 50000 },
+    ];
+
+    return {
+      momGrowth: momGrowthWithRate,
+      yoyComparison: yoyComparisonWithRate,
+      projections,
+      milestones,
+    };
+  }
+
+  async getPlatformCategoryAnalytics(dto: TimeRangeDto) {
+    const { startDate, endDate } = this.getTimeRange(dto);
+
+    const categoryRanking = await this.prisma.$queryRaw<Array<{
+      categoryId: string;
+      categoryName: string;
+      redemptionCount: bigint;
+      revenue: bigint;
+      averageOrderValue: bigint;
+    }>>`
+      SELECT 
+        c.id as "categoryId",
+        c.name as "categoryName",
+        COUNT(rs.id) as "redemptionCount",
+        COALESCE(SUM(o."originalPriceNpr"), 0) as revenue,
+        COALESCE(AVG(o."originalPriceNpr"), 0) as "averageOrderValue"
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      JOIN categories c ON o."categoryId" = c.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY c.id, c.name
+      ORDER BY "redemptionCount" DESC
+    `;
+
+    const categoryTrends = await this.prisma.$queryRaw<Array<{
+      categoryId: string;
+      categoryName: string;
+      date: string;
+      redemptionCount: bigint;
+    }>>`
+      SELECT 
+        c.id as "categoryId",
+        c.name as "categoryName",
+        DATE(rs."redeemedAt") as date,
+        COUNT(*) as "redemptionCount"
+      FROM "redemption_sessions" rs
+      JOIN offers o ON rs."offerId" = o.id
+      JOIN categories c ON o."categoryId" = c.id
+      WHERE rs.status = 'REDEEMED'
+        AND rs."redeemedAt" >= ${startDate}
+        AND rs."redeemedAt" <= ${endDate}
+      GROUP BY c.id, c.name, DATE(rs."redeemedAt")
+      ORDER BY date ASC
+    `;
+
+    const crossCategoryBehavior = await this.prisma.$queryRaw<Array<{
+      fromCategory: string;
+      toCategory: string;
+      userCount: bigint;
+    }>>`
+      WITH user_categories AS (
+        SELECT 
+          rs."userId",
+          c.name as category,
+          ROW_NUMBER() OVER (PARTITION BY rs."userId" ORDER BY rs."redeemedAt") as rn
+        FROM "redemption_sessions" rs
+        JOIN offers o ON rs."offerId" = o.id
+        JOIN categories c ON o."categoryId" = c.id
+        WHERE rs.status = 'REDEEMED'
+      ),
+      category_transitions AS (
+        SELECT 
+          c1.category as "fromCategory",
+          c2.category as "toCategory",
+          COUNT(*) as "userCount"
+        FROM user_categories c1
+        JOIN user_categories c2 ON c1."userId" = c2."userId" AND c1.rn + 1 = c2.rn
+        WHERE c1.category != c2.category
+        GROUP BY c1.category, c2.category
+      )
+      SELECT * FROM category_transitions
+      ORDER BY "userCount" DESC
+      LIMIT 10
+    `;
+
+    return {
+      categoryRanking: categoryRanking.map(c => ({
+        categoryId: c.categoryId,
+        categoryName: c.categoryName,
+        redemptionCount: Number(c.redemptionCount),
+        revenue: Number(c.revenue),
+        averageOrderValue: Number(c.averageOrderValue),
+      })),
+      categoryTrends: categoryTrends.map(c => ({
+        categoryId: c.categoryId,
+        categoryName: c.categoryName,
+        date: c.date,
+        redemptionCount: Number(c.redemptionCount),
+      })),
+      crossCategoryBehavior: crossCategoryBehavior.map(c => ({
+        fromCategory: c.fromCategory,
+        toCategory: c.toCategory,
+        userCount: Number(c.userCount),
+      })),
     };
   }
 }

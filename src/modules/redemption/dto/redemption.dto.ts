@@ -64,3 +64,23 @@ export class MerchantRedeemDto {
   @IsOptional()
   staffId?: string;
 }
+
+export class VerifyQrDto {
+  @ApiProperty({
+    example: 'offernepal://redeem?code=NF-7821AB',
+    description:
+      'The raw QR payload string scanned by staff from the customer wallet',
+  })
+  @IsString()
+  @IsNotEmpty()
+  qrPayload!: string;
+
+  @ApiPropertyOptional({
+    example: 'branch-1',
+    description:
+      'Branch where the redemption is happening (optional). When provided it must belong to the redeeming merchant.',
+  })
+  @IsString()
+  @IsOptional()
+  branchId?: string;
+}

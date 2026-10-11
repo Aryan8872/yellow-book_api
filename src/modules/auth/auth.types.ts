@@ -30,6 +30,8 @@ export interface SafeUser {
   name: string | null;
   role: string;
   isVerified: boolean;
+  /** Email ownership confirmed via /auth/verify-email (T-02-03). */
+  emailVerified: boolean;
   isActive: boolean;
   createdAt: Date;
 }

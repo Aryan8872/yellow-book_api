@@ -8,6 +8,7 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -20,9 +21,11 @@ import { RedemptionService } from './redemption.service';
 import {
   RedeemInitDto,
   MerchantRedeemDto,
+  VerifyQrDto,
 } from './dto/redemption.dto';
-import { Roles } from '../auth/auth.decorators';
+import { Roles, RequireStaffPermission } from '../auth/auth.decorators';
 import { UserRole } from '../auth/auth.types';
+import { StaffPermissionGuard } from '../auth/guards/staff-permission.guard';
 import type { Request } from 'express';
 import { ListRedemptionsDto } from '../admin/dto/list-redemptions.dto';
 
@@ -79,6 +82,39 @@ export class RedemptionController {
   async merchantRedeem(@Body() dto: MerchantRedeemDto, @Req() req: Request) {
     const user = (req as any).user;
     return this.redemptionService.merchantRedeem(user, dto);
+  }
+
+  @Post('redemption/merchant/verify-qr')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT-auth')
+  @Roles(UserRole.MERCHANT_STAFF, UserRole.MERCHANT_ADMIN, UserRole.ADMIN)
+  @RequireStaffPermission('redeem')
+  @UseGuards(StaffPermissionGuard)
+  @ApiOperation({
+    summary:
+      'Staff scans the customer QR to complete redemption (staff-permission based, no merchant PIN). Documented fallback remains POST /merchant/redeem.',
+  })
+  @ApiResponse({ status: 200, description: 'Voucher redeemed successfully' })
+  @ApiResponse({ status: 403, description: 'Not an active staff member / missing redeem permission / wrong merchant' })
+  @ApiResponse({
+    status: 409,
+    description: 'Voucher already used or concurrently locked',
+  })
+  async verifyQr(@Body() dto: VerifyQrDto, @Req() req: Request) {
+    const user = (req as any).user;
+    return this.redemptionService.verifyQrRedemption(user, dto);
+  }
+
+  @Get('redemption/qr-image')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      'Render a redemption QR payload string into a scannable PNG data URL',
+  })
+  @ApiResponse({ status: 200, description: 'PNG data URL for the payload' })
+  @ApiResponse({ status: 400, description: 'payload query parameter missing' })
+  async getQrImage(@Query('payload') payload: string) {
+    return this.redemptionService.renderQrImage(payload);
   }
 
   @Get('sessions')

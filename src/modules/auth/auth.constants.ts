@@ -38,6 +38,7 @@ export const USER_SELECT_FIELDS = {
   name: true,
   role: true,
   isVerified: true,
+  emailVerified: true,
   isActive: true,
   createdAt: true,
   subscription: {

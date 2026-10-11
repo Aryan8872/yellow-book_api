@@ -9,6 +9,7 @@ import {
   Get,
   Patch,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -19,7 +20,14 @@ import {
 } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto, RefreshTokenDto } from './dto/auth.dto';
+import {
+  RegisterDto,
+  LoginDto,
+  RefreshTokenDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+  VerifyEmailDto,
+} from './dto/auth.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { Public, RequireApiKey, Roles } from './auth.decorators';
 import { UserRole } from './auth.types';
@@ -68,6 +76,80 @@ export class AuthController {
     return { tokens };
   }
 
+  @Public()
+  @Throttle({ auth: { limit: 5, ttl: 60000 } })
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Request a password reset link',
+    description:
+      'Always answers 202 with an identical body, whether or not the address has an account, so accounts cannot be enumerated (T-02-01).',
+  })
+  @ApiBody({ type: ForgotPasswordDto })
+  @ApiResponse({ status: 202, description: 'Request accepted' })
+  @ApiResponse({ status: 400, description: 'Validation failed' })
+  @ApiResponse({ status: 429, description: 'Too many requests' })
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    await this.authService.forgotPassword(dto);
+    return {
+      message:
+        'If an account exists for that email address, a password reset link is on its way.',
+    };
+  }
+
+  @Public()
+  @Throttle({ auth: { limit: 5, ttl: 60000 } })
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Complete a password reset with a single-use token',
+  })
+  @ApiBody({ type: ResetPasswordDto })
+  @ApiResponse({ status: 200, description: 'Password updated' })
+  @ApiResponse({ status: 400, description: 'Invalid, expired or used token' })
+  @ApiResponse({ status: 429, description: 'Too many requests' })
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.authService.resetPassword(dto);
+    return {
+      message:
+        'Your password has been updated. Please sign in with your new password.',
+    };
+  }
+
+  @Public()
+  @Throttle({ auth: { limit: 5, ttl: 60000 } })
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify an email address with a single-use token' })
+  @ApiBody({ type: VerifyEmailDto })
+  @ApiResponse({ status: 200, description: 'Email verified' })
+  @ApiResponse({ status: 400, description: 'Invalid, expired or used token' })
+  @ApiResponse({ status: 429, description: 'Too many requests' })
+  async verifyEmail(@Body() dto: VerifyEmailDto) {
+    await this.authService.verifyEmail(dto);
+    return { message: 'Your email address has been verified.' };
+  }
+
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Re-send the email verification link for the current user',
+    description:
+      'Always answers 202, including when the address is already verified (T-02-01).',
+  })
+  @ApiResponse({ status: 202, description: 'Request accepted' })
+  @ApiResponse({ status: 429, description: 'Too many requests' })
+  async resendVerification(@CurrentUser('id') userId: string) {
+    if (userId) {
+      await this.authService.resendEmailVerification(userId);
+    }
+    return {
+      message:
+        'If your email address still needs verification, a new link is on its way.',
+    };
+  }
+
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
@@ -77,6 +159,17 @@ export class AuthController {
       await this.authService.logout(userId);
     }
     return { message: 'Logged out successfully' };
+  }
+
+  @Post('revoke-all')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Revoke all refresh tokens for the current user' })
+  async revokeAll(@CurrentUser('id') userId: string) {
+    if (userId) {
+      await this.authService.revokeAllTokens(userId);
+    }
+    return { message: 'All tokens revoked successfully' };
   }
 
   @Get('me')

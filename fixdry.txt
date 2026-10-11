@@ -1,0 +1,31 @@
+npm error code ERESOLVE
+npm error ERESOLVE could not resolve
+npm error
+npm error While resolving: @nestjs/swagger@12.0.2
+npm error Found: @nestjs/common@11.2.7
+npm error node_modules/@nestjs/common
+npm error   @nestjs/common@"^11.0.1" from the root project
+npm error   peer @nestjs/common@"^11.0.0 || ^12.0.0" from @nestjs/config@12.0.1
+npm error   node_modules/@nestjs/config
+npm error     @nestjs/config@"^12.0.1" from the root project
+npm error   8 more (@nestjs/core, @nestjs/jwt, @nestjs/mapped-types, ...)
+npm error
+npm error Could not resolve dependency:
+npm error peer @nestjs/common@"^12.0.0" from @nestjs/swagger@12.0.2
+npm error node_modules/@nestjs/swagger
+npm error   @nestjs/swagger@"^12.0.2" from the root project
+npm error
+npm error Conflicting peer dependency: @nestjs/common@12.1.2
+npm error node_modules/@nestjs/common
+npm error   peer @nestjs/common@"^12.0.0" from @nestjs/swagger@12.0.2
+npm error   node_modules/@nestjs/swagger
+npm error     @nestjs/swagger@"^12.0.2" from the root project
+npm error
+npm error Fix the upstream dependency conflict, or retry
+npm error this command with --force or --legacy-peer-deps
+npm error to accept an incorrect (and potentially broken) dependency resolution.
+npm error
+npm error
+npm error For a full report see:
+npm error C:\Users\User\AppData\Local\npm-cache\_logs\2026-10-10T10_09_26_573Z-eresolve-report.txt
+npm error A complete log of this run can be found in: C:\Users\User\AppData\Local\npm-cache\_logs\2026-10-10T10_09_26_573Z-debug-0.log

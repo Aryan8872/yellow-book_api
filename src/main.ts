@@ -11,6 +11,11 @@ import * as fs from "fs";
 import cookieParser from "cookie-parser";
 import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter";
 import { createValidationPipe } from "./common/pipes/validation.pipe";
+import { initSentry } from "./common/sentry/sentry.setup";
+
+// Initialize Sentry error tracking & performance monitoring first, before
+// anything else, so instrumentation captures errors from the whole app.
+initSentry();
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
