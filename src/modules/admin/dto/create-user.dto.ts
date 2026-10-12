@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString, IsEnum, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, IsEnum, MinLength, IsUrl } from 'class-validator';
 import { UserRole } from '@prisma/client';
 
 export class CreateUserDto {
@@ -26,4 +26,8 @@ export class CreateUserDto {
   @IsString()
   @IsOptional()
   merchantId?: string;
+
+  @IsUrl()
+  @IsOptional()
+  avatarUrl?: string;
 }

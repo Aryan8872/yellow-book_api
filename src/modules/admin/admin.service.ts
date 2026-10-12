@@ -200,11 +200,13 @@ export class AdminService {
         ...(dto.name && { name: dto.name }),
         ...(dto.contactEmail && { contactEmail: dto.contactEmail }),
         ...(dto.contactPhone !== undefined && { contactPhone: dto.contactPhone }),
-        ...(dto.address !== undefined && { address: dto.address }),
-        ...(dto.panNumber !== undefined && { panNumber: dto.panNumber }),
         ...(dto.vatNumber !== undefined && { vatNumber: dto.vatNumber }),
+        ...(dto.panNumber !== undefined && { registrationNumber: dto.panNumber }),
         ...(dto.status && { status: dto.status }),
         ...(dto.logoUrl !== undefined && { logoUrl: dto.logoUrl }),
+        ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.websiteUrl !== undefined && { websiteUrl: dto.websiteUrl }),
+        ...(dto.coverUrl !== undefined && { coverUrl: dto.coverUrl }),
       },
     });
 
@@ -309,8 +311,9 @@ export class AdminService {
         contactPhone: dto.contactPhone ?? null,
         description: dto.description ?? null,
         websiteUrl: dto.websiteUrl ?? null,
-        registrationNumber: dto.registrationNumber ?? null,
+        registrationNumber: dto.panNumber ?? dto.registrationNumber ?? null,
         vatNumber: dto.vatNumber ?? null,
+        logoUrl: dto.logoUrl ?? null,
         status: MerchantStatus.ACTIVE,
         onboardedAt: new Date(),
       },
@@ -347,6 +350,7 @@ export class AdminService {
         passwordHash,
         name: dto.name ?? null,
         phone: dto.phone ?? null,
+        avatarUrl: dto.avatarUrl ?? null,
         role: dto.role ?? UserRole.USER,
         isActive: true,
         emailVerified: true,
@@ -360,6 +364,7 @@ export class AdminService {
         role: true,
         isActive: true,
         createdAt: true,
+        avatarUrl: true,
       },
     });
 

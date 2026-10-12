@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, IsUrl } from 'class-validator';
 
 export class CreateMerchantDto {
   @IsString()
@@ -27,9 +27,17 @@ export class CreateMerchantDto {
 
   @IsString()
   @IsOptional()
+  panNumber?: string;
+
+  @IsString()
+  @IsOptional()
   vatNumber?: string;
 
   @IsString()
   @IsOptional()
   address?: string;
+
+  @IsUrl()
+  @IsOptional()
+  logoUrl?: string;
 }

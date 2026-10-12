@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsEnum, IsEmail, IsUrl, MinLength, MaxLength } from 'class-validator';
+import { IsOptional, IsString, IsEnum, IsEmail, IsUrl, MinLength, MaxLength, Matches } from 'class-validator';
 import { MerchantStatus } from '@prisma/client';
 
 export class UpdateMerchantDto {
@@ -10,22 +10,24 @@ export class UpdateMerchantDto {
 
   @IsOptional()
   @IsEmail()
+  @MaxLength(255)
   contactEmail?: string;
 
   @IsOptional()
   @IsString()
+  @Matches(/^\+?[1-9]\d{1,14}$/, {
+    message: 'Phone number must be a valid international format'
+  })
   contactPhone?: string;
 
   @IsOptional()
   @IsString()
-  address?: string;
-
-  @IsOptional()
-  @IsString()
+  @MaxLength(50)
   panNumber?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   vatNumber?: string;
 
   @IsOptional()
@@ -35,4 +37,17 @@ export class UpdateMerchantDto {
   @IsOptional()
   @IsUrl()
   logoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  description?: string;
+
+  @IsOptional()
+  @IsUrl()
+  websiteUrl?: string;
+
+  @IsOptional()
+  @IsUrl()
+  coverUrl?: string;
 }

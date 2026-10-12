@@ -65,13 +65,22 @@ export class CreateMerchantDto {
   contactPhone?: string;
 
   @ApiPropertyOptional({
-    description: 'Business registration number',
+    description: 'Business registration number (PAN)',
     example: '123456789',
   })
   @IsOptional()
   @IsString()
   @MaxLength(50)
   registrationNumber?: string;
+
+  @ApiPropertyOptional({
+    description: 'PAN number (alias for registration number)',
+    example: '123456789',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  panNumber?: string;
 
   @ApiPropertyOptional({
     description: 'VAT number',
