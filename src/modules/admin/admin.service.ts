@@ -314,6 +314,7 @@ export class AdminService {
         registrationNumber: dto.panNumber ?? dto.registrationNumber ?? null,
         vatNumber: dto.vatNumber ?? null,
         logoUrl: dto.logoUrl ?? null,
+        coverUrl: dto.coverUrl ?? null,
         status: MerchantStatus.ACTIVE,
         onboardedAt: new Date(),
       },

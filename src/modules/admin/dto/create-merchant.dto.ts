@@ -17,7 +17,7 @@ export class CreateMerchantDto {
   @IsOptional()
   description?: string;
 
-  @IsString()
+  @IsUrl()
   @IsOptional()
   websiteUrl?: string;
 
@@ -40,4 +40,8 @@ export class CreateMerchantDto {
   @IsUrl()
   @IsOptional()
   logoUrl?: string;
+
+  @IsUrl()
+  @IsOptional()
+  coverUrl?: string;
 }
