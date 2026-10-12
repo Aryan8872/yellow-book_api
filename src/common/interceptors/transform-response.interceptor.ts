@@ -16,6 +16,14 @@ export interface ApiResponse<T> {
   errorCode: AppErrorCode;
   message?: string;
   data: T;
+  pagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrevious: boolean;
+  };
   meta?: Record<string, any>;
   timestamp: string;
   correlationId?: string;
@@ -52,7 +60,19 @@ export class TransformResponseInterceptor<T> implements NestInterceptor<
         if (result && typeof result === 'object' && 'data' in result) {
           data = result.data;
           message = result.message || message;
-          meta = result.meta;
+          meta = result.meta || ('pagination' in result ? { pagination: (result as any).pagination } : undefined);
+          // If pagination is present alongside data, preserve it in the envelope as pagination property as well
+          return {
+            success: true,
+            statusCode: response.statusCode,
+            errorCode: AppErrorCode.SUCCESS,
+            message,
+            data,
+            pagination: (result as any).pagination,
+            ...(meta ? { meta } : {}),
+            timestamp: new Date().toISOString(),
+            correlationId,
+          } as any;
         }
 
         return {

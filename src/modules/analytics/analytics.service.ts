@@ -497,15 +497,14 @@ export class AnalyticsService {
 
     const geographicDistribution = await this.prisma.$queryRaw<Array<{ city: string; userCount: bigint }>>`
       SELECT 
-        u.city,
-        COUNT(DISTINCT u.id) as "userCount"
+        COALESCE(mb.district::text, 'Kathmandu') as city,
+        COUNT(DISTINCT rs."user_id") as "userCount"
       FROM "redemption_sessions" rs
-      JOIN users u ON rs."user_id" = u.id
+      LEFT JOIN "merchant_branches" mb ON rs."branch_id" = mb.id
       WHERE rs.status = 'REDEEMED'
         AND rs."redeemed_at" >= ${startDate}
         AND rs."redeemed_at" <= ${endDate}
-        AND u.city IS NOT NULL
-      GROUP BY u.city
+      GROUP BY mb.district
       ORDER BY "userCount" DESC
       LIMIT 10
     `;
@@ -553,7 +552,7 @@ export class AnalyticsService {
     const engagementRate = totalViewCount > 0 ? (totalRedemptions / totalViewCount) * 100 : 0;
 
     const avgDiscountResult = await this.prisma.$queryRaw<Array<{ avgDiscount: bigint }>>`
-      SELECT COALESCE(AVG(o."original_price_npr" - o."discounted_price_npr"), 0) as "avgDiscount"
+      SELECT COALESCE(AVG(o."estimated_savings_npr"), 0) as "avgDiscount"
       FROM "redemption_sessions" rs
       JOIN offers o ON rs."offer_id" = o.id
       WHERE rs.status = 'REDEEMED'
