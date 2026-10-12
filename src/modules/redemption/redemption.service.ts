@@ -534,6 +534,40 @@ export class RedemptionService {
     };
   }
 
+  async getMyRedemptions(userId: string) {
+    const redemptions = await this.prisma.redemptionSession.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        offer: {
+          select: {
+            id: true,
+            title: true,
+            merchant: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return redemptions.map((r) => ({
+      id: r.id,
+      offerId: r.offerId,
+      offerTitle: r.offer.title,
+      merchantName: r.offer.merchant.name,
+      status: r.status,
+      redemptionCode: r.code,
+      qrPayload: `offernepal://redeem?code=${r.code}`,
+      savingsNpr: r.savingsNpr,
+      redeemedAt: r.redeemedAt ? r.redeemedAt.toISOString() : r.createdAt.toISOString(),
+      expiresAt: r.codeExpiresAt.toISOString(),
+    }));
+  }
+
   // ─────────────────────────────────────────────────────────────────
   // Private Helpers
   // ─────────────────────────────────────────────────────────────────

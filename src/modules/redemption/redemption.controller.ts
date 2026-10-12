@@ -117,6 +117,15 @@ export class RedemptionController {
     return this.redemptionService.renderQrImage(payload);
   }
 
+  @Get('redemptions/me')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Get current user redemption history and active vouchers' })
+  @ApiResponse({ status: 200, description: 'List of redemption sessions for current user' })
+  async getMyRedemptions(@Req() req: Request) {
+    const user = (req as any).user;
+    return this.redemptionService.getMyRedemptions(user.id);
+  }
+
   @Get('sessions')
   @ApiBearerAuth('JWT-auth')
   @Roles(UserRole.ADMIN)
