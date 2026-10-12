@@ -492,7 +492,20 @@ export class AdminService {
       this.prisma.fraudFlag.count({ where }),
     ]);
 
-    return { fraudFlags, total, page: dto.page || 1, limit: dto.limit || 20 };
+    const page = dto.page || 1;
+    const limit = dto.limit || 20;
+
+    return {
+      data: fraudFlags,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrevious: page > 1,
+      },
+    };
   }
 
   async reviewFraudFlag(dto: ReviewFraudDto, adminId: string) {

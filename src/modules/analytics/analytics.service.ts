@@ -50,13 +50,13 @@ export class AnalyticsService {
 
     const results = await this.prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
       SELECT 
-        DATE("redeemedAt") as date,
+        DATE("redeemed_at") as date,
         COUNT(*) as count
       FROM "redemption_sessions"
       WHERE "status" = 'REDEEMED'
-        AND "redeemedAt" >= ${startDate}
-        AND "redeemedAt" <= ${endDate}
-      GROUP BY DATE("redeemedAt")
+        AND "redeemed_at" >= ${startDate}
+        AND "redeemed_at" <= ${endDate}
+      GROUP BY DATE("redeemed_at")
       ORDER BY date ASC
     `;
 
@@ -91,13 +91,13 @@ export class AnalyticsService {
 
     const results = await this.prisma.$queryRaw<Array<{ week: string; count: bigint }>>`
       SELECT 
-        DATE_TRUNC('week', "redeemedAt") as week,
+        DATE_TRUNC('week', "redeemed_at") as week,
         COUNT(*) as count
       FROM "redemption_sessions"
       WHERE "status" = 'REDEEMED'
-        AND "redeemedAt" >= ${startDate}
-        AND "redeemedAt" <= ${endDate}
-      GROUP BY DATE_TRUNC('week', "redeemedAt")
+        AND "redeemed_at" >= ${startDate}
+        AND "redeemed_at" <= ${endDate}
+      GROUP BY DATE_TRUNC('week', "redeemed_at")
       ORDER BY week ASC
     `;
 
@@ -126,14 +126,14 @@ export class AnalyticsService {
       SELECT 
         o.id,
         o.title,
-        o."originalPriceNpr",
+        o."original_price_npr",
         COUNT(rs.id) as "redemptionCount"
       FROM offers o
-      JOIN "redemption_sessions" rs ON rs."offerId" = o.id
+      JOIN "redemption_sessions" rs ON rs."offer_id" = o.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
-      GROUP BY o.id, o.title, o."originalPriceNpr"
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
+      GROUP BY o.id, o.title, o."original_price_npr"
       ORDER BY "redemptionCount" DESC
       LIMIT ${limit}
     `;
@@ -161,13 +161,13 @@ export class AnalyticsService {
         m.id,
         m.name,
         COUNT(rs.id) as "totalRedemptions",
-        COUNT(DISTINCT rs."offerId") as "uniqueOffersClaimed"
+        COUNT(DISTINCT rs."offer_id") as "uniqueOffersClaimed"
       FROM merchants m
-      JOIN offers o ON o."merchantId" = m.id
-      JOIN "redemption_sessions" rs ON rs."offerId" = o.id
+      JOIN offers o ON o."merchant_id" = m.id
+      JOIN "redemption_sessions" rs ON rs."offer_id" = o.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
       GROUP BY m.id, m.name
       ORDER BY "totalRedemptions" DESC
       LIMIT ${limit}
@@ -196,14 +196,14 @@ export class AnalyticsService {
         m.id,
         m.name,
         COUNT(rs.id) as "redemptionCount",
-        SUM(o."originalPriceNpr") as "totalRevenue"
+        SUM(o."original_price_npr") as "totalRevenue"
       FROM merchants m
-      JOIN offers o ON o."merchantId" = m.id
-      JOIN "redemption_sessions" rs ON rs."offerId" = o.id
+      JOIN offers o ON o."merchant_id" = m.id
+      JOIN "redemption_sessions" rs ON rs."offer_id" = o.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
-        AND o."originalPriceNpr" IS NOT NULL
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
+        AND o."original_price_npr" IS NOT NULL
       GROUP BY m.id, m.name
       ORDER BY "totalRevenue" DESC
       LIMIT ${limit}
@@ -228,16 +228,16 @@ export class AnalyticsService {
       count: bigint;
     }>>`
       SELECT 
-        DATE(rs."redeemedAt") as date,
+        DATE(rs."redeemed_at") as date,
         c.name as category,
         COUNT(*) as count
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
-      JOIN categories c ON o."categoryId" = c.id
+      JOIN offers o ON rs."offer_id" = o.id
+      JOIN categories c ON o."category_id" = c.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
-      GROUP BY DATE(rs."redeemedAt"), c.name
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
+      GROUP BY DATE(rs."redeemed_at"), c.name
       ORDER BY date ASC, category ASC
     `;
 
@@ -282,12 +282,12 @@ export class AnalyticsService {
     const { startDate, endDate } = this.getTimeRange(dto);
 
     const totalRevenueResult = await this.prisma.$queryRaw<Array<{ totalRevenue: bigint }>>`
-      SELECT COALESCE(SUM(o."originalPriceNpr"), 0) as "totalRevenue"
+      SELECT COALESCE(SUM(o."original_price_npr"), 0) as "totalRevenue"
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
+      JOIN offers o ON rs."offer_id" = o.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
     `;
 
     const totalRevenue = Number(totalRevenueResult[0]?.totalRevenue || 0);
@@ -299,16 +299,16 @@ export class AnalyticsService {
       redemptionCount: bigint;
     }>>`
       SELECT 
-        m.id as "merchantId",
+        m.id as "merchant_id",
         m.name as "merchantName",
-        COALESCE(SUM(o."originalPriceNpr"), 0) as revenue,
+        COALESCE(SUM(o."original_price_npr"), 0) as revenue,
         COUNT(rs.id) as "redemptionCount"
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
-      JOIN merchants m ON o."merchantId" = m.id
+      JOIN offers o ON rs."offer_id" = o.id
+      JOIN merchants m ON o."merchant_id" = m.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
       GROUP BY m.id, m.name
       ORDER BY revenue DESC
       LIMIT 10
@@ -321,28 +321,28 @@ export class AnalyticsService {
       redemptionCount: bigint;
     }>>`
       SELECT 
-        c.id as "categoryId",
+        c.id as "category_id",
         c.name as "categoryName",
-        COALESCE(SUM(o."originalPriceNpr"), 0) as revenue,
+        COALESCE(SUM(o."original_price_npr"), 0) as revenue,
         COUNT(rs.id) as "redemptionCount"
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
-      JOIN categories c ON o."categoryId" = c.id
+      JOIN offers o ON rs."offer_id" = o.id
+      JOIN categories c ON o."category_id" = c.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
       GROUP BY c.id, c.name
       ORDER BY revenue DESC
     `;
 
     const avgOrderValueResult = await this.prisma.$queryRaw<Array<{ avgOrderValue: bigint }>>`
-      SELECT COALESCE(AVG(o."originalPriceNpr"), 0) as "avgOrderValue"
+      SELECT COALESCE(AVG(o."original_price_npr"), 0) as "avgOrderValue"
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
+      JOIN offers o ON rs."offer_id" = o.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
-        AND o."originalPriceNpr" IS NOT NULL
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
+        AND o."original_price_npr" IS NOT NULL
     `;
 
     const averageOrderValue = Number(avgOrderValueResult[0]?.avgOrderValue || 0);
@@ -354,21 +354,21 @@ export class AnalyticsService {
     const lastYearEnd = new Date(now.getFullYear() - 1, now.getMonth() + 1, 0);
 
     const lastMonthRevenue = await this.prisma.$queryRaw<Array<{ revenue: bigint }>>`
-      SELECT COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+      SELECT COALESCE(SUM(o."original_price_npr"), 0) as revenue
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
+      JOIN offers o ON rs."offer_id" = o.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${lastMonthStart}
-        AND rs."redeemedAt" <= ${lastMonthEnd}
+        AND rs."redeemed_at" >= ${lastMonthStart}
+        AND rs."redeemed_at" <= ${lastMonthEnd}
     `;
 
     const lastYearRevenue = await this.prisma.$queryRaw<Array<{ revenue: bigint }>>`
-      SELECT COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+      SELECT COALESCE(SUM(o."original_price_npr"), 0) as revenue
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
+      JOIN offers o ON rs."offer_id" = o.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${lastYearStart}
-        AND rs."redeemedAt" <= ${lastYearEnd}
+        AND rs."redeemed_at" >= ${lastYearStart}
+        AND rs."redeemed_at" <= ${lastYearEnd}
     `;
 
     const mom = Number(lastMonthRevenue[0]?.revenue || 0) > 0
@@ -380,14 +380,14 @@ export class AnalyticsService {
 
     const revenueTrend = await this.prisma.$queryRaw<Array<{ date: string; revenue: bigint }>>`
       SELECT 
-        DATE(rs."redeemedAt") as date,
-        COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+        DATE(rs."redeemed_at") as date,
+        COALESCE(SUM(o."original_price_npr"), 0) as revenue
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
+      JOIN offers o ON rs."offer_id" = o.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
-      GROUP BY DATE(rs."redeemedAt")
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
+      GROUP BY DATE(rs."redeemed_at")
       ORDER BY date ASC
     `;
 
@@ -419,38 +419,38 @@ export class AnalyticsService {
 
     const totalUsers = await this.prisma.user.count({ where: { isActive: true } });
     const activeUsers = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
-      SELECT COUNT(DISTINCT rs."userId") as count
+      SELECT COUNT(DISTINCT rs."user_id") as count
       FROM "redemption_sessions" rs
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
     `;
 
     const newUsersResult = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
-      SELECT COUNT(DISTINCT rs."userId") as count
+      SELECT COUNT(DISTINCT rs."user_id") as count
       FROM "redemption_sessions" rs
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
-        AND rs."userId" NOT IN (
-          SELECT DISTINCT rs2."userId"
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
+        AND rs."user_id" NOT IN (
+          SELECT DISTINCT rs2."user_id"
           FROM "redemption_sessions" rs2
           WHERE rs2.status = 'REDEEMED'
-            AND rs2."redeemedAt" < ${startDate}
+            AND rs2."redeemed_at" < ${startDate}
         )
     `;
 
     const returningUsersResult = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
-      SELECT COUNT(DISTINCT rs."userId") as count
+      SELECT COUNT(DISTINCT rs."user_id") as count
       FROM "redemption_sessions" rs
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
-        AND rs."userId" IN (
-          SELECT DISTINCT rs2."userId"
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
+        AND rs."user_id" IN (
+          SELECT DISTINCT rs2."user_id"
           FROM "redemption_sessions" rs2
           WHERE rs2.status = 'REDEEMED'
-            AND rs2."redeemedAt" < ${startDate}
+            AND rs2."redeemed_at" < ${startDate}
         )
     `;
 
@@ -467,17 +467,17 @@ export class AnalyticsService {
       totalSpent: bigint;
     }>>`
       SELECT 
-        u.id as "userId",
+        u.id as "user_id",
         u.name as "userName",
         u.email as "userEmail",
         COUNT(rs.id) as "redemptionCount",
-        COALESCE(SUM(o."originalPriceNpr"), 0) as "totalSpent"
+        COALESCE(SUM(o."original_price_npr"), 0) as "totalSpent"
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
-      JOIN users u ON rs."userId" = u.id
+      JOIN offers o ON rs."offer_id" = o.id
+      JOIN users u ON rs."user_id" = u.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
       GROUP BY u.id, u.name, u.email
       ORDER BY "redemptionCount" DESC
       LIMIT 10
@@ -485,13 +485,13 @@ export class AnalyticsService {
 
     const userAcquisitionTrend = await this.prisma.$queryRaw<Array<{ date: string; newUsers: bigint }>>`
       SELECT 
-        DATE(rs."redeemedAt") as date,
-        COUNT(DISTINCT rs."userId") as "newUsers"
+        DATE(rs."redeemed_at") as date,
+        COUNT(DISTINCT rs."user_id") as "newUsers"
       FROM "redemption_sessions" rs
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
-      GROUP BY DATE(rs."redeemedAt")
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
+      GROUP BY DATE(rs."redeemed_at")
       ORDER BY date ASC
     `;
 
@@ -500,10 +500,10 @@ export class AnalyticsService {
         u.city,
         COUNT(DISTINCT u.id) as "userCount"
       FROM "redemption_sessions" rs
-      JOIN users u ON rs."userId" = u.id
+      JOIN users u ON rs."user_id" = u.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
         AND u.city IS NOT NULL
       GROUP BY u.city
       ORDER BY "userCount" DESC
@@ -553,12 +553,12 @@ export class AnalyticsService {
     const engagementRate = totalViewCount > 0 ? (totalRedemptions / totalViewCount) * 100 : 0;
 
     const avgDiscountResult = await this.prisma.$queryRaw<Array<{ avgDiscount: bigint }>>`
-      SELECT COALESCE(AVG(o."originalPriceNpr" - o."discountedPriceNpr"), 0) as "avgDiscount"
+      SELECT COALESCE(AVG(o."original_price_npr" - o."discounted_price_npr"), 0) as "avgDiscount"
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
+      JOIN offers o ON rs."offer_id" = o.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
     `;
 
     const averageDiscountValue = Number(avgDiscountResult[0]?.avgDiscount || 0);
@@ -570,16 +570,16 @@ export class AnalyticsService {
       revenue: bigint;
     }>>`
       SELECT 
-        c.id as "categoryId",
+        c.id as "category_id",
         c.name as "categoryName",
         COUNT(rs.id) as "redemptionCount",
-        COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+        COALESCE(SUM(o."original_price_npr"), 0) as revenue
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
-      JOIN categories c ON o."categoryId" = c.id
+      JOIN offers o ON rs."offer_id" = o.id
+      JOIN categories c ON o."category_id" = c.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
       GROUP BY c.id, c.name
       ORDER BY "redemptionCount" DESC
       LIMIT 10
@@ -635,17 +635,17 @@ export class AnalyticsService {
       activeOffers: bigint;
     }>>`
       SELECT 
-        m.id as "merchantId",
+        m.id as "merchant_id",
         m.name as "merchantName",
         COUNT(rs.id) as "totalRedemptions",
-        COALESCE(SUM(o."originalPriceNpr"), 0) as "totalRevenue",
+        COALESCE(SUM(o."original_price_npr"), 0) as "totalRevenue",
         COUNT(DISTINCT o.id) as "activeOffers"
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
-      JOIN merchants m ON o."merchantId" = m.id
+      JOIN offers o ON rs."offer_id" = o.id
+      JOIN merchants m ON o."merchant_id" = m.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
       GROUP BY m.id, m.name
       ORDER BY "totalRedemptions" DESC
     `;
@@ -656,15 +656,15 @@ export class AnalyticsService {
       redemptionCount: bigint;
     }>>`
       SELECT 
-        m.id as "merchantId",
+        m.id as "merchant_id",
         m.name as "merchantName",
         COUNT(rs.id) as "redemptionCount"
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
-      JOIN merchants m ON o."merchantId" = m.id
+      JOIN offers o ON rs."offer_id" = o.id
+      JOIN merchants m ON o."merchant_id" = m.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
       GROUP BY m.id, m.name
       ORDER BY "redemptionCount" DESC
       LIMIT 1
@@ -676,15 +676,15 @@ export class AnalyticsService {
       redemptionCount: bigint;
     }>>`
       SELECT 
-        m.id as "merchantId",
+        m.id as "merchant_id",
         m.name as "merchantName",
         COUNT(rs.id) as "redemptionCount"
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
-      JOIN merchants m ON o."merchantId" = m.id
+      JOIN offers o ON rs."offer_id" = o.id
+      JOIN merchants m ON o."merchant_id" = m.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
       GROUP BY m.id, m.name
       ORDER BY "redemptionCount" ASC
       LIMIT 1
@@ -697,17 +697,17 @@ export class AnalyticsService {
       redemptionCount: bigint;
     }>>`
       SELECT 
-        m.id as "merchantId",
+        m.id as "merchant_id",
         m.name as "merchantName",
-        DATE(rs."redeemedAt") as date,
+        DATE(rs."redeemed_at") as date,
         COUNT(rs.id) as "redemptionCount"
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
-      JOIN merchants m ON o."merchantId" = m.id
+      JOIN offers o ON rs."offer_id" = o.id
+      JOIN merchants m ON o."merchant_id" = m.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
-      GROUP BY m.id, m.name, DATE(rs."redeemedAt")
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
+      GROUP BY m.id, m.name, DATE(rs."redeemed_at")
       ORDER BY date ASC
     `;
 
@@ -746,13 +746,13 @@ export class AnalyticsService {
 
     const hourlyRedemptions = await this.prisma.$queryRaw<Array<{ hour: number; redemptionCount: bigint }>>`
       SELECT 
-        EXTRACT(HOUR FROM rs."redeemedAt") as hour,
+        EXTRACT(HOUR FROM rs."redeemed_at") as hour,
         COUNT(*) as "redemptionCount"
       FROM "redemption_sessions" rs
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
-      GROUP BY EXTRACT(HOUR FROM rs."redeemedAt")
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
+      GROUP BY EXTRACT(HOUR FROM rs."redeemed_at")
       ORDER BY hour ASC
     `;
 
@@ -762,15 +762,15 @@ export class AnalyticsService {
       revenue: bigint;
     }>>`
       SELECT 
-        TO_CHAR(rs."redeemedAt", 'Day') as day,
+        TO_CHAR(rs."redeemed_at", 'Day') as day,
         COUNT(*) as "redemptionCount",
-        COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+        COALESCE(SUM(o."original_price_npr"), 0) as revenue
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
+      JOIN offers o ON rs."offer_id" = o.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
-      GROUP BY TO_CHAR(rs."redeemedAt", 'Day')
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
+      GROUP BY TO_CHAR(rs."redeemed_at", 'Day')
       ORDER BY "redemptionCount" DESC
     `;
 
@@ -780,15 +780,15 @@ export class AnalyticsService {
       revenue: bigint;
     }>>`
       SELECT 
-        TO_CHAR(rs."redeemedAt", 'Mon') as month,
+        TO_CHAR(rs."redeemed_at", 'Mon') as month,
         COUNT(*) as "redemptionCount",
-        COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+        COALESCE(SUM(o."original_price_npr"), 0) as revenue
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
+      JOIN offers o ON rs."offer_id" = o.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
-      GROUP BY TO_CHAR(rs."redeemedAt", 'Mon')
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
+      GROUP BY TO_CHAR(rs."redeemed_at", 'Mon')
       ORDER BY month ASC
     `;
 
@@ -822,15 +822,15 @@ export class AnalyticsService {
     }>>`
       WITH monthly_data AS (
         SELECT 
-          DATE_TRUNC('month', rs."redeemedAt") as month,
+          DATE_TRUNC('month', rs."redeemed_at") as month,
           COUNT(*) as redemptions,
-          COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+          COALESCE(SUM(o."original_price_npr"), 0) as revenue
         FROM "redemption_sessions" rs
-        JOIN offers o ON rs."offerId" = o.id
+        JOIN offers o ON rs."offer_id" = o.id
         WHERE rs.status = 'REDEEMED'
-          AND rs."redeemedAt" >= ${startDate}
-          AND rs."redeemedAt" <= ${endDate}
-        GROUP BY DATE_TRUNC('month', rs."redeemedAt")
+          AND rs."redeemed_at" >= ${startDate}
+          AND rs."redeemed_at" <= ${endDate}
+        GROUP BY DATE_TRUNC('month', rs."redeemed_at")
       )
       SELECT 
         TO_CHAR(month, 'YYYY-MM') as date,
@@ -859,15 +859,15 @@ export class AnalyticsService {
     }>>`
       WITH yearly_data AS (
         SELECT 
-          EXTRACT(YEAR FROM rs."redeemedAt") as year,
+          EXTRACT(YEAR FROM rs."redeemed_at") as year,
           COUNT(*) as redemptions,
-          COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+          COALESCE(SUM(o."original_price_npr"), 0) as revenue
         FROM "redemption_sessions" rs
-        JOIN offers o ON rs."offerId" = o.id
+        JOIN offers o ON rs."offer_id" = o.id
         WHERE rs.status = 'REDEEMED'
-          AND rs."redeemedAt" >= ${startDate}
-          AND rs."redeemedAt" <= ${endDate}
-        GROUP BY EXTRACT(YEAR FROM rs."redeemedAt")
+          AND rs."redeemed_at" >= ${startDate}
+          AND rs."redeemed_at" <= ${endDate}
+        GROUP BY EXTRACT(YEAR FROM rs."redeemed_at")
       )
       SELECT 
         year,
@@ -891,17 +891,17 @@ export class AnalyticsService {
       SELECT COUNT(*) as count
       FROM "redemption_sessions" rs
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
     `;
 
     const recentRevenue = await this.prisma.$queryRaw<Array<{ revenue: bigint }>>`
-      SELECT COALESCE(SUM(o."originalPriceNpr"), 0) as revenue
+      SELECT COALESCE(SUM(o."original_price_npr"), 0) as revenue
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
+      JOIN offers o ON rs."offer_id" = o.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
     `;
 
     const daysInRange = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -953,17 +953,17 @@ export class AnalyticsService {
       averageOrderValue: bigint;
     }>>`
       SELECT 
-        c.id as "categoryId",
+        c.id as "category_id",
         c.name as "categoryName",
         COUNT(rs.id) as "redemptionCount",
-        COALESCE(SUM(o."originalPriceNpr"), 0) as revenue,
-        COALESCE(AVG(o."originalPriceNpr"), 0) as "averageOrderValue"
+        COALESCE(SUM(o."original_price_npr"), 0) as revenue,
+        COALESCE(AVG(o."original_price_npr"), 0) as "averageOrderValue"
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
-      JOIN categories c ON o."categoryId" = c.id
+      JOIN offers o ON rs."offer_id" = o.id
+      JOIN categories c ON o."category_id" = c.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
       GROUP BY c.id, c.name
       ORDER BY "redemptionCount" DESC
     `;
@@ -975,17 +975,17 @@ export class AnalyticsService {
       redemptionCount: bigint;
     }>>`
       SELECT 
-        c.id as "categoryId",
+        c.id as "category_id",
         c.name as "categoryName",
-        DATE(rs."redeemedAt") as date,
+        DATE(rs."redeemed_at") as date,
         COUNT(*) as "redemptionCount"
       FROM "redemption_sessions" rs
-      JOIN offers o ON rs."offerId" = o.id
-      JOIN categories c ON o."categoryId" = c.id
+      JOIN offers o ON rs."offer_id" = o.id
+      JOIN categories c ON o."category_id" = c.id
       WHERE rs.status = 'REDEEMED'
-        AND rs."redeemedAt" >= ${startDate}
-        AND rs."redeemedAt" <= ${endDate}
-      GROUP BY c.id, c.name, DATE(rs."redeemedAt")
+        AND rs."redeemed_at" >= ${startDate}
+        AND rs."redeemed_at" <= ${endDate}
+      GROUP BY c.id, c.name, DATE(rs."redeemed_at")
       ORDER BY date ASC
     `;
 
@@ -996,12 +996,12 @@ export class AnalyticsService {
     }>>`
       WITH user_categories AS (
         SELECT 
-          rs."userId",
+          rs."user_id",
           c.name as category,
-          ROW_NUMBER() OVER (PARTITION BY rs."userId" ORDER BY rs."redeemedAt") as rn
+          ROW_NUMBER() OVER (PARTITION BY rs."user_id" ORDER BY rs."redeemed_at") as rn
         FROM "redemption_sessions" rs
-        JOIN offers o ON rs."offerId" = o.id
-        JOIN categories c ON o."categoryId" = c.id
+        JOIN offers o ON rs."offer_id" = o.id
+        JOIN categories c ON o."category_id" = c.id
         WHERE rs.status = 'REDEEMED'
       ),
       category_transitions AS (
@@ -1010,7 +1010,7 @@ export class AnalyticsService {
           c2.category as "toCategory",
           COUNT(*) as "userCount"
         FROM user_categories c1
-        JOIN user_categories c2 ON c1."userId" = c2."userId" AND c1.rn + 1 = c2.rn
+        JOIN user_categories c2 ON c1."user_id" = c2."user_id" AND c1.rn + 1 = c2.rn
         WHERE c1.category != c2.category
         GROUP BY c1.category, c2.category
       )
