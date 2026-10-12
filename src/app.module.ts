@@ -9,8 +9,8 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 
-// Infrastructure
 import { RedisModule } from './infrastructure/redis/redis.module';
+import { CacheModule } from './infrastructure/cache/cache.module';
 import { MetricsModule } from './infrastructure/metrics/metrics.module';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { CloudinaryModule } from './infrastructure/cloudinary/cloudinary.module';
@@ -105,6 +105,7 @@ import { ThrottlerStorageRedisService } from './common/throttler/throttler-stora
     }),
 
     RedisModule,
+    CacheModule,
     PrismaModule,
     MetricsModule,
     CloudinaryModule,
