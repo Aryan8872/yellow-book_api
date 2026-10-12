@@ -5,6 +5,7 @@ import {
   Inject,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -137,6 +138,7 @@ export class AuthService {
    */
   async login(
     user: SafeUser & { role: string; subscriptionActive?: boolean },
+    portal?: 'ADMIN' | 'MERCHANT' | 'USER',
   ): Promise<{ user: SafeUser & { merchantId?: string }; tokens: AuthTokens }> {
     // Fetch full user with merchantStaff relation for token generation
     const fullUser = await this.prisma.user.findUnique({
@@ -150,6 +152,49 @@ export class AuthService {
 
     // Ensure role is properly mapped from Prisma enum to app enum
     const mappedRole = mapPrismaRoleToAppRole(fullUser.role);
+
+    // 1. Strict Admin Portal Guard: Only ADMIN role is authorized to login
+    if (portal === 'ADMIN' && mappedRole !== UserRole.ADMIN) {
+      this.logger.warn(
+        `User ${fullUser.email} (role: ${mappedRole}) rejected from admin portal login`,
+      );
+      throw new ForbiddenException('Access denied: Administrator privileges required');
+    }
+
+    // 2. Strict Merchant Portal Guard
+    if (portal === 'MERCHANT') {
+      const isMerchantRole =
+        mappedRole === UserRole.MERCHANT_ADMIN || mappedRole === UserRole.MERCHANT_STAFF;
+
+      if (!isMerchantRole || !fullUser.merchantStaff) {
+        this.logger.warn(
+          `User ${fullUser.email} (role: ${mappedRole}) rejected from merchant portal login (not affiliated)`,
+        );
+        throw new ForbiddenException(
+          'Access denied: You are not authorized as merchant staff or administrator',
+        );
+      }
+
+      // Check merchant status
+      const merchantStatus = fullUser.merchantStaff.merchant?.status;
+      if (merchantStatus === 'SUSPENDED') {
+        this.logger.warn(
+          `User ${fullUser.email} blocked from login: merchant ${fullUser.merchantStaff.merchantId} is SUSPENDED`,
+        );
+        throw new ForbiddenException(
+          'Your merchant account is currently suspended. Please contact platform administration.',
+        );
+      }
+
+      if (merchantStatus === 'ARCHIVED') {
+        this.logger.warn(
+          `User ${fullUser.email} blocked from login: merchant ${fullUser.merchantStaff.merchantId} is ARCHIVED`,
+        );
+        throw new ForbiddenException(
+          'Your merchant account has been archived or rejected. Access is disabled.',
+        );
+      }
+    }
 
     const tokens = await this.generateTokens({
       ...fullUser,

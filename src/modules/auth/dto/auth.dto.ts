@@ -51,6 +51,11 @@ export class LoginDto {
   @IsString()
   @IsNotEmpty()
   password!: string;
+
+  @ApiPropertyOptional({ enum: ['ADMIN', 'MERCHANT', 'USER'], description: 'Client portal context to enforce strict role access' })
+  @IsString()
+  @IsOptional()
+  portal?: 'ADMIN' | 'MERCHANT' | 'USER';
 }
 
 export class RefreshTokenDto {

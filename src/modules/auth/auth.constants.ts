@@ -50,6 +50,13 @@ export const USER_SELECT_FIELDS = {
   merchantStaff: {
     select: {
       merchantId: true,
+      merchant: {
+        select: {
+          id: true,
+          status: true,
+          name: true,
+        },
+      },
     },
   },
 } as const;

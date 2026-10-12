@@ -14,6 +14,9 @@ import { ApproveMerchantDto } from './dto/approve-merchant.dto';
 import { RejectMerchantDto } from './dto/reject-merchant.dto';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
 import { SuspendMerchantDto } from './dto/suspend-merchant.dto';
+import { ReactivateMerchantDto } from './dto/reactivate-merchant.dto';
+import { CreateMerchantDto } from './dto/create-merchant.dto';
+import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
@@ -97,6 +100,16 @@ export class AdminController {
     return this.adminService.updateMerchant(id, dto, admin.id);
   }
 
+  @Post('merchants')
+  @ApiOperation({ summary: 'Create a new merchant directly from admin' })
+  @ApiResponse({ status: 201, description: 'Merchant created successfully' })
+  async createMerchant(
+    @Body() dto: CreateMerchantDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.adminService.createMerchant(dto, admin.id);
+  }
+
   @Post('merchants/suspend')
   @ApiOperation({ summary: 'Suspend a merchant account' })
   @ApiResponse({ status: 200, description: 'Merchant suspended successfully' })
@@ -106,6 +119,27 @@ export class AdminController {
     @CurrentUser() admin: AuthenticatedUser,
   ) {
     return this.adminService.suspendMerchant(dto, admin.id);
+  }
+
+  @Post('merchants/reactivate')
+  @ApiOperation({ summary: 'Reactivate a suspended or archived merchant account' })
+  @ApiResponse({ status: 200, description: 'Merchant reactivated successfully' })
+  @ApiResponse({ status: 404, description: 'Merchant not found' })
+  async reactivateMerchant(
+    @Body() dto: ReactivateMerchantDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.adminService.reactivateMerchant(dto, admin.id);
+  }
+
+  @Post('users')
+  @ApiOperation({ summary: 'Create a new user directly from admin' })
+  @ApiResponse({ status: 201, description: 'User created successfully' })
+  async createUser(
+    @Body() dto: CreateUserDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.adminService.createUser(dto, admin.id);
   }
 
   @Get('users')

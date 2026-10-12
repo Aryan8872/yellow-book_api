@@ -6,12 +6,16 @@ import { ApproveMerchantDto } from './dto/approve-merchant.dto';
 import { RejectMerchantDto } from './dto/reject-merchant.dto';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
 import { SuspendMerchantDto } from './dto/suspend-merchant.dto';
+import { ReactivateMerchantDto } from './dto/reactivate-merchant.dto';
+import { CreateMerchantDto } from './dto/create-merchant.dto';
+import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { ActivateUserDto } from './dto/activate-user.dto';
 import { ListFraudFlagsDto } from './dto/list-fraud-flags.dto';
 import { ReviewFraudDto, FraudReviewDecision } from './dto/review-fraud.dto';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AdminService {
@@ -252,6 +256,135 @@ export class AdminService {
     });
 
     return updated;
+  }
+
+  async reactivateMerchant(dto: ReactivateMerchantDto, adminId: string) {
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: dto.merchantId },
+    });
+
+    if (!merchant) {
+      throw new NotFoundException('Merchant not found');
+    }
+
+    if (merchant.status === MerchantStatus.ACTIVE) {
+      throw new BadRequestException('Merchant is already active');
+    }
+
+    const updated = await this.prisma.merchant.update({
+      where: { id: dto.merchantId },
+      data: {
+        status: MerchantStatus.ACTIVE,
+      },
+    });
+
+    // Log audit entry
+    await this.prisma.auditLog.create({
+      data: {
+        entity: 'Merchant',
+        entityId: dto.merchantId,
+        action: 'reactivate',
+        actorId: adminId,
+        merchantId: dto.merchantId,
+        metadata: { notes: dto.notes },
+      },
+    });
+
+    return updated;
+  }
+
+  async createMerchant(dto: CreateMerchantDto, adminId: string) {
+    const existing = await this.prisma.merchant.findFirst({
+      where: { contactEmail: dto.contactEmail },
+    });
+
+    if (existing) {
+      throw new BadRequestException('A merchant with this contact email already exists');
+    }
+
+    const merchant = await this.prisma.merchant.create({
+      data: {
+        name: dto.name,
+        contactEmail: dto.contactEmail,
+        contactPhone: dto.contactPhone ?? null,
+        description: dto.description ?? null,
+        websiteUrl: dto.websiteUrl ?? null,
+        registrationNumber: dto.registrationNumber ?? null,
+        vatNumber: dto.vatNumber ?? null,
+        status: MerchantStatus.ACTIVE,
+        onboardedAt: new Date(),
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        entity: 'Merchant',
+        entityId: merchant.id,
+        action: 'create_merchant',
+        actorId: adminId,
+        merchantId: merchant.id,
+        metadata: { name: merchant.name, contactEmail: merchant.contactEmail },
+      },
+    });
+
+    return merchant;
+  }
+
+  async createUser(dto: CreateUserDto, adminId: string) {
+    const existing = await this.prisma.user.findUnique({
+      where: { email: dto.email.toLowerCase().trim() },
+    });
+
+    if (existing) {
+      throw new BadRequestException('A user with this email already exists');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+
+    const user = await this.prisma.user.create({
+      data: {
+        email: dto.email.toLowerCase().trim(),
+        passwordHash,
+        name: dto.name ?? null,
+        phone: dto.phone ?? null,
+        role: dto.role ?? UserRole.USER,
+        isActive: true,
+        emailVerified: true,
+        isVerified: true,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+      },
+    });
+
+    // If role is merchant admin or staff and merchantId is provided, link staff record
+    if (dto.merchantId && (user.role === UserRole.MERCHANT_ADMIN || user.role === UserRole.MERCHANT_STAFF)) {
+      await this.prisma.merchantStaff.create({
+        data: {
+          userId: user.id,
+          merchantId: dto.merchantId,
+          role: user.role,
+        },
+      });
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        entity: 'User',
+        entityId: user.id,
+        action: 'create_user',
+        actorId: adminId,
+        metadata: { email: user.email, role: user.role },
+      },
+    });
+
+    return user;
   }
 
   async listUsers(dto: ListUsersDto) {

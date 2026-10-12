@@ -60,7 +60,8 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Returns access & refresh tokens' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(@Req() req: Request) {
-    return this.authService.login(req.user as any);
+    const portal = (req.body as any)?.portal;
+    return this.authService.login(req.user as any, portal);
   }
 
   @Public()
