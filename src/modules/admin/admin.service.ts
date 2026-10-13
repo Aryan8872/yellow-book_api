@@ -311,7 +311,7 @@ export class AdminService {
         contactPhone: dto.contactPhone ?? null,
         description: dto.description ?? null,
         websiteUrl: dto.websiteUrl ?? null,
-        registrationNumber: dto.panNumber ?? dto.registrationNumber ?? null,
+        registrationNumber: dto.panNumber ?? null,
         vatNumber: dto.vatNumber ?? null,
         logoUrl: dto.logoUrl ?? null,
         coverUrl: dto.coverUrl ?? null,

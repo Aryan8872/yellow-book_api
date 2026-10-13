@@ -336,7 +336,7 @@ export class OfferService {
         categoryId: dto.categoryId,
         title: dto.title,
         description: dto.description,
-        terms: dto.terms,
+        terms: dto.terms ?? '',
         estimatedSavingsNpr: dto.estimatedSavingsNpr,
         originalPriceNpr: dto.originalPriceNpr,
         discountPercentage: dto.discountPercentage,
@@ -349,12 +349,21 @@ export class OfferService {
         validFrom: dto.validFrom,
         validUntil: dto.validUntil,
       },
+    });
+
+    // Fetch the created offer with relations for mapping
+    const offerWithRelations = await this.prisma.offer.findUnique({
+      where: { id: offer.id },
       select: OFFER_SELECT_FIELDS,
     });
 
+    if (!offerWithRelations) {
+      throw new NotFoundException('Failed to retrieve created offer');
+    }
+
     this.metrics.offersCreated.inc({ merchant_id: merchantId });
 
-    return mapOfferToSummary(offer);
+    return mapOfferToSummary(offerWithRelations);
   }
 
   /**
