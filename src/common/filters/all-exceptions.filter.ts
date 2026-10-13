@@ -174,9 +174,46 @@ export class AllExceptionsFilter implements ExceptionFilter {
     errorMessage: string;
   } {
     const code = exception.code;
+    const meta = exception.meta;
 
     switch (code) {
       case 'P2002':
+        // Unique constraint violation - provide field-specific error
+        if (meta && meta.target) {
+          const targetField = Array.isArray(meta.target) ? meta.target[0] : meta.target;
+          const fieldName = this.formatFieldName(targetField);
+
+          switch (fieldName.toLowerCase()) {
+            case 'email':
+              return {
+                statusCode: HttpStatus.CONFLICT,
+                errorCode: AppErrorCode.EMAIL_ALREADY_EXISTS,
+                errorTitle: 'Email Already Exists',
+                errorMessage: 'An account with this email already exists. Please use a different email address.',
+              };
+            case 'phone':
+              return {
+                statusCode: HttpStatus.CONFLICT,
+                errorCode: AppErrorCode.PHONE_ALREADY_EXISTS,
+                errorTitle: 'Phone Already Exists',
+                errorMessage: 'An account with this phone number already exists. Please use a different phone number.',
+              };
+            case 'name':
+              return {
+                statusCode: HttpStatus.CONFLICT,
+                errorCode: AppErrorCode.MERCHANT_NAME_ALREADY_EXISTS,
+                errorTitle: 'Name Already Exists',
+                errorMessage: 'A merchant with this name already exists. Please use a different name.',
+              };
+            default:
+              return {
+                statusCode: HttpStatus.CONFLICT,
+                errorCode: AppErrorCode.DB_UNIQUE_CONSTRAINT_VIOLATION,
+                errorTitle: 'Conflict',
+                errorMessage: `A record with this ${fieldName} already exists.`,
+              };
+          }
+        }
         return {
           statusCode: HttpStatus.CONFLICT,
           errorCode: AppErrorCode.DB_UNIQUE_CONSTRAINT_VIOLATION,
@@ -216,5 +253,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
           errorMessage: 'A database error occurred. Please try again later.',
         };
     }
+  }
+
+  private formatFieldName(fieldName: string): string {
+    // Convert snake_case to readable format
+    return fieldName
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
   }
 }
