@@ -96,49 +96,49 @@ import { Type } from 'class-transformer';
 export class CreateOfferDto {
   @ApiProperty({ example: '50% Off on All Burgers' })
   @IsString()
-  @IsNotEmpty()
-  @MinLength(3)
-  @MaxLength(200)
+  @IsNotEmpty({ message: 'Offer title is required' })
+  @MinLength(3, { message: 'Title must be at least 3 characters' })
+  @MaxLength(200, { message: 'Title must be less than 200 characters' })
   title!: string;
 
   @ApiProperty({
     example: 'Get 50% discount on all burger items. Valid for dine-in only.',
   })
   @IsString()
-  @IsNotEmpty()
-  @MinLength(10)
-  @MaxLength(2000)
+  @IsNotEmpty({ message: 'Description is required' })
+  @MinLength(10, { message: 'Description must be at least 10 characters' })
+  @MaxLength(2000, { message: 'Description must be less than 2000 characters' })
   description!: string;
 
   @ApiProperty({
     example: 'Cannot be combined with other offers. Valid for dine-in only.',
   })
   @IsString()
-  @IsNotEmpty()
-  @MinLength(10)
-  @MaxLength(1000)
-  terms!: string;
+  @IsOptional()
+  @MinLength(10, { message: 'Terms must be at least 10 characters' })
+  @MaxLength(1000, { message: 'Terms must be less than 1000 characters' })
+  terms?: string;
 
   @ApiProperty({ example: 'cmusspcto0003devrmc2l7q84', description: 'Category ID' })
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Category is required' })
   categoryId!: string;
 
   @ApiProperty({ example: 500, description: 'Estimated savings in NPR' })
   @IsNumber()
-  @Min(0)
+  @Min(0, { message: 'Estimated savings must be positive' })
   estimatedSavingsNpr!: number;
 
   @ApiPropertyOptional({ example: 1200, description: 'Original price in NPR before discount' })
   @IsNumber()
-  @Min(0)
+  @Min(0, { message: 'Original price must be positive' })
   @IsOptional()
   originalPriceNpr?: number;
 
   @ApiPropertyOptional({ example: 50, description: 'Discount percentage 0-100' })
   @IsInt()
-  @Min(0)
-  @Max(100)
+  @Min(0, { message: 'Discount percentage must be at least 0' })
+  @Max(100, { message: 'Discount percentage must be at most 100' })
   @IsOptional()
   discountPercentage?: number;
 
@@ -146,7 +146,7 @@ export class CreateOfferDto {
     example: 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=600&q=80',
     description: 'Primary hero cover image URL shown on cards',
   })
-  @IsUrl()
+  @IsUrl({}, { message: 'Invalid cover image URL' })
   @IsOptional()
   coverImage?: string;
 
@@ -159,8 +159,8 @@ export class CreateOfferDto {
     type: [String],
   })
   @IsArray()
-  @IsUrl({}, { each: true })
-  @MaxLength(10, { each: true })
+  @IsUrl({}, { each: true, message: 'Invalid image URL' })
+  @MaxLength(10, { each: true, message: 'Maximum 10 images allowed' })
   @IsOptional()
   images?: string[];
 
@@ -171,8 +171,8 @@ export class CreateOfferDto {
   })
   @IsArray()
   @IsString({ each: true })
-  @MaxLength(50, { each: true })
-  @MaxLength(5)
+  @MaxLength(50, { each: true, message: 'Each highlight must be less than 50 characters' })
+  @MaxLength(5, { message: 'Maximum 5 highlights allowed' })
   @IsOptional()
   highlights?: string[];
 
@@ -204,7 +204,7 @@ export class CreateOfferDto {
     example: '2024-01-01T00:00:00Z',
     description: 'Offer valid from date',
   })
-  @IsDateString()
+  @IsDateString({}, { message: 'Invalid valid from date' })
   @IsOptional()
   validFrom?: string;
 
@@ -212,7 +212,7 @@ export class CreateOfferDto {
     example: '2024-12-31T23:59:59Z',
     description: 'Offer valid until date',
   })
-  @IsDateString()
+  @IsDateString({}, { message: 'Invalid valid until date' })
   @IsOptional()
   validUntil?: string;
 }

@@ -28,11 +28,6 @@ export class CreateMerchantDto {
   websiteUrl?: string;
 
   @IsString()
-  @MaxLength(50, { message: 'Registration number must be less than 50 characters' })
-  @IsOptional()
-  registrationNumber?: string;
-
-  @IsString()
   @MaxLength(50, { message: 'PAN number must be less than 50 characters' })
   @IsOptional()
   panNumber?: string;

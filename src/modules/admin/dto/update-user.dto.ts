@@ -1,15 +1,15 @@
-import { IsOptional, IsString, IsBoolean, MinLength, MaxLength, IsEnum, IsUrl } from 'class-validator';
+import { IsOptional, IsString, IsBoolean, MinLength, MaxLength, IsEnum, IsUrl, Matches } from 'class-validator';
 import { UserRole } from '@prisma/client';
 
 export class UpdateUserDto {
   @IsOptional()
   @IsString()
-  @MinLength(2)
-  @MaxLength(100)
+  @MinLength(2, { message: 'Name must be at least 2 characters' })
+  @MaxLength(100, { message: 'Name must be less than 100 characters' })
   name?: string;
 
   @IsOptional()
-  @IsEnum(UserRole)
+  @IsEnum(UserRole, { message: 'Invalid role selected' })
   role?: UserRole;
 
   @IsOptional()
@@ -18,10 +18,11 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
+  @Matches(/^\+?[1-9]\d{1,14}$/, { message: 'Invalid phone number format' })
   phone?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsUrl({}, { message: 'Invalid avatar URL' })
   avatarUrl?: string;
 
   @IsOptional()
