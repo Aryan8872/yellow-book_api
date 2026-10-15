@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
@@ -206,6 +207,108 @@ describe('AuthService', () => {
       await expect(
         service.login({ id: 'user-1', email: 'test@example.com' } as any),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    // ── Portal guards (Phase 6) ──────────────────────────────────────────
+
+    const merchantStaffRow = (status: string) => ({
+      merchantId: 'merchant-1',
+      merchant: { status },
+    });
+
+    it('rejects a non-ADMIN user from the ADMIN portal', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(
+        buildUserRow({ role: PrismaUserRole.MERCHANT_ADMIN }),
+      );
+
+      await expect(
+        service.login({ id: 'user-1', email: 'e@x.com' } as any, 'ADMIN'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('admits an ADMIN user to the ADMIN portal', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(
+        buildUserRow({ role: PrismaUserRole.ADMIN }),
+      );
+
+      const result = await service.login(
+        { id: 'user-1', email: 'e@x.com' } as any,
+        'ADMIN',
+      );
+
+      expect(result.tokens.accessToken).toBe('access-token');
+    });
+
+    it('rejects a plain USER from the MERCHANT portal', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(buildUserRow());
+
+      await expect(
+        service.login({ id: 'user-1', email: 'e@x.com' } as any, 'MERCHANT'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects a merchant-role user with no staff row from the MERCHANT portal', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(
+        buildUserRow({ role: PrismaUserRole.MERCHANT_ADMIN, merchantStaff: null }),
+      );
+
+      await expect(
+        service.login({ id: 'user-1', email: 'e@x.com' } as any, 'MERCHANT'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('blocks staff of a SUSPENDED merchant from the MERCHANT portal', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(
+        buildUserRow({
+          role: PrismaUserRole.MERCHANT_STAFF,
+          merchantStaff: merchantStaffRow('SUSPENDED'),
+        }),
+      );
+
+      await expect(
+        service.login({ id: 'user-1', email: 'e@x.com' } as any, 'MERCHANT'),
+      ).rejects.toThrow('currently suspended');
+    });
+
+    it('blocks staff of an ARCHIVED merchant from the MERCHANT portal', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(
+        buildUserRow({
+          role: PrismaUserRole.MERCHANT_STAFF,
+          merchantStaff: merchantStaffRow('ARCHIVED'),
+        }),
+      );
+
+      await expect(
+        service.login({ id: 'user-1', email: 'e@x.com' } as any, 'MERCHANT'),
+      ).rejects.toThrow('archived or rejected');
+    });
+
+    it('admits staff of an ACTIVE merchant and returns merchantId', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(
+        buildUserRow({
+          role: PrismaUserRole.MERCHANT_STAFF,
+          merchantStaff: merchantStaffRow('ACTIVE'),
+        }),
+      );
+
+      const result = await service.login(
+        { id: 'user-1', email: 'e@x.com' } as any,
+        'MERCHANT',
+      );
+
+      expect(result.tokens.accessToken).toBe('access-token');
+      expect((result.user as any).merchantId).toBe('merchant-1');
+    });
+
+    it('does not trip any guard for a plain USER portal login', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(buildUserRow());
+
+      const result = await service.login(
+        { id: 'user-1', email: 'e@x.com' } as any,
+        'USER',
+      );
+
+      expect(result.tokens.accessToken).toBe('access-token');
     });
   });
 
