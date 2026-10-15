@@ -493,4 +493,290 @@ describe('RedemptionService', () => {
   });
 
 
+
+  describe('listRedemptions', () => {
+    it('passes skip/take to Prisma as NUMBERS (regression guard for the string-take 500)', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(0);
+
+      await service.listRedemptions({ page: 2, limit: 20 } as any);
+
+      const args = mockPrismaService.redemptionSession.findMany.mock.calls[0][0];
+      expect(args.skip).toBe(20);
+      expect(args.take).toBe(20);
+      expect(typeof args.skip).toBe('number');
+      expect(typeof args.take).toBe('number');
+    });
+
+    it('defaults to an unfiltered where and createdAt desc ordering', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(0);
+
+      await service.listRedemptions({ page: 1, limit: 20 } as any);
+
+      const args = mockPrismaService.redemptionSession.findMany.mock.calls[0][0];
+      expect(args.where).toEqual({});
+      expect(args.orderBy).toEqual({ createdAt: 'desc' });
+    });
+
+    it('applies sortBy/sortOrder when provided', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(0);
+
+      await service.listRedemptions({
+        page: 1,
+        limit: 20,
+        sortBy: 'redeemedAt',
+        sortOrder: 'desc',
+      } as any);
+
+      const args = mockPrismaService.redemptionSession.findMany.mock.calls[0][0];
+      expect(args.orderBy).toEqual({ redeemedAt: 'desc' });
+    });
+
+    it('falls back to asc when sortBy is set without a sort order', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(0);
+
+      await service.listRedemptions({
+        page: 1,
+        limit: 20,
+        sortBy: 'createdAt',
+      } as any);
+
+      const args = mockPrismaService.redemptionSession.findMany.mock.calls[0][0];
+      expect(args.orderBy).toEqual({ createdAt: 'asc' });
+    });
+
+    it('maps merchantId to a nested offer filter', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(0);
+
+      await service.listRedemptions({
+        page: 1,
+        limit: 20,
+        merchantId: 'merchant-9',
+      } as any);
+
+      const args = mockPrismaService.redemptionSession.findMany.mock.calls[0][0];
+      expect(args.where.offer).toEqual({ merchantId: 'merchant-9' });
+    });
+
+    it('passes offerId and status through as top-level filters', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(0);
+
+      await service.listRedemptions({
+        page: 1,
+        limit: 20,
+        offerId: 'offer-3',
+        status: 'REDEEMED',
+      } as any);
+
+      const args = mockPrismaService.redemptionSession.findMany.mock.calls[0][0];
+      expect(args.where.offerId).toBe('offer-3');
+      expect(args.where.status).toBe('REDEEMED');
+    });
+
+    it('converts start/end dates to Date objects on createdAt', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(0);
+
+      await service.listRedemptions({
+        page: 1,
+        limit: 20,
+        startDate: '2026-01-01T00:00:00.000Z',
+        endDate: '2026-01-31T00:00:00.000Z',
+      } as any);
+
+      const args = mockPrismaService.redemptionSession.findMany.mock.calls[0][0];
+      expect(args.where.createdAt.gte).toEqual(
+        new Date('2026-01-01T00:00:00.000Z'),
+      );
+      expect(args.where.createdAt.lte).toEqual(
+        new Date('2026-01-31T00:00:00.000Z'),
+      );
+    });
+
+    it('sets only gte when just a start date is given', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(0);
+
+      await service.listRedemptions({
+        page: 1,
+        limit: 20,
+        startDate: '2026-01-01T00:00:00.000Z',
+      } as any);
+
+      const args = mockPrismaService.redemptionSession.findMany.mock.calls[0][0];
+      expect(args.where.createdAt.gte).toEqual(
+        new Date('2026-01-01T00:00:00.000Z'),
+      );
+      expect(args.where.createdAt.lte).toBeUndefined();
+    });
+
+    it('builds a case-insensitive OR search over user email and offer title', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(0);
+
+      await service.listRedemptions({
+        page: 1,
+        limit: 20,
+        search: 'pizza',
+      } as any);
+
+      const args = mockPrismaService.redemptionSession.findMany.mock.calls[0][0];
+      expect(args.where.OR).toEqual([
+        { user: { email: { contains: 'pizza', mode: 'insensitive' } } },
+        { offer: { title: { contains: 'pizza', mode: 'insensitive' } } },
+      ]);
+    });
+
+    it('uses the same where clause for both findMany and count', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(0);
+
+      await service.listRedemptions({
+        page: 1,
+        limit: 20,
+        offerId: 'offer-3',
+        search: 'pizza',
+      } as any);
+
+      const findManyWhere =
+        mockPrismaService.redemptionSession.findMany.mock.calls[0][0].where;
+      const countWhere =
+        mockPrismaService.redemptionSession.count.mock.calls[0][0].where;
+      expect(countWhere).toEqual(findManyWhere);
+    });
+
+    it('returns pagination with totalPages/hasNext/hasPrevious', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(45);
+
+      const result = await service.listRedemptions({ page: 2, limit: 20 } as any);
+
+      expect(result.pagination).toEqual({
+        page: 2,
+        limit: 20,
+        total: 45,
+        totalPages: Math.ceil(45 / 20),
+        hasNext: true,
+        hasPrevious: true,
+      });
+    });
+
+    it('reports no next page on the last page', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(45);
+
+      const result = await service.listRedemptions({ page: 3, limit: 20 } as any);
+
+      expect(result.pagination.hasNext).toBe(false);
+      expect(result.pagination.hasPrevious).toBe(true);
+      expect(result.pagination.totalPages).toBe(3);
+    });
+
+    it('reports no previous page on the first page', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(5);
+
+      const result = await service.listRedemptions({ page: 1, limit: 20 } as any);
+
+      expect(result.pagination.hasPrevious).toBe(false);
+      expect(result.pagination.hasNext).toBe(false);
+      expect(result.pagination.totalPages).toBe(1);
+    });
+
+    it('returns the sessions as data unchanged', async () => {
+      const rows = [{ id: 'session-1' }, { id: 'session-2' }];
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue(rows);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(2);
+
+      const result = await service.listRedemptions({ page: 1, limit: 20 } as any);
+
+      expect(result.data).toEqual(rows);
+    });
+  });
+
+
+  describe('getMyRedemptions', () => {
+    const sessionRow = {
+      id: 'session-1',
+      offerId: 'offer-1',
+      status: 'REDEEMED',
+      code: 'NF-ABCD12',
+      savingsNpr: 500,
+      redeemedAt: new Date('2026-01-05T10:00:00.000Z'),
+      createdAt: new Date('2026-01-05T09:00:00.000Z'),
+      codeExpiresAt: new Date('2026-01-06T09:00:00.000Z'),
+      offer: {
+        id: 'offer-1',
+        title: '50% Off Pizza',
+        merchant: { id: 'merchant-1', name: 'Pizza Palace' },
+      },
+    };
+
+    it('queries by userId ordered by newest first', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+
+      await service.getMyRedemptions('user-7');
+
+      expect(mockPrismaService.redemptionSession.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 'user-7' },
+          orderBy: { createdAt: 'desc' },
+        }),
+      );
+    });
+
+    it('maps rows to the customer-facing shape', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([sessionRow]);
+
+      const result = await service.getMyRedemptions('user-7');
+
+      expect(result).toEqual([
+        {
+          id: 'session-1',
+          offerId: 'offer-1',
+          offerTitle: '50% Off Pizza',
+          merchantName: 'Pizza Palace',
+          status: 'REDEEMED',
+          redemptionCode: 'NF-ABCD12',
+          qrPayload: 'offernepal://redeem?code=NF-ABCD12',
+          savingsNpr: 500,
+          redeemedAt: '2026-01-05T10:00:00.000Z',
+          expiresAt: '2026-01-06T09:00:00.000Z',
+        },
+      ]);
+    });
+
+    it('falls back to createdAt when the session is not yet redeemed', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([
+        { ...sessionRow, redeemedAt: null },
+      ]);
+
+      const result = await service.getMyRedemptions('user-7');
+
+      expect(result[0].redeemedAt).toBe('2026-01-05T09:00:00.000Z');
+    });
+
+    it('serializes dates to ISO strings', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([sessionRow]);
+
+      const result = await service.getMyRedemptions('user-7');
+
+      expect(typeof result[0].redeemedAt).toBe('string');
+      expect(typeof result[0].expiresAt).toBe('string');
+    });
+
+    it('returns an empty array when the user has no redemptions', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+
+      const result = await service.getMyRedemptions('user-7');
+
+      expect(result).toEqual([]);
+    });
+  });
+
 });
