@@ -35,8 +35,12 @@ export class UpdateMerchantDto {
   status?: MerchantStatus;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
   logoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  logoImage?: string;
 
   @IsOptional()
   @IsString()
@@ -48,6 +52,10 @@ export class UpdateMerchantDto {
   websiteUrl?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
   coverUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  coverImage?: string;
 }

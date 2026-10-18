@@ -116,6 +116,8 @@ export class OfferService {
         { OR: [{ validUntil: null }, { validUntil: { gte: now } }] },
       ],
       ...(query.merchantId && { merchantId: query.merchantId }),
+      ...(query.minDiscount !== undefined && { discountPercentage: { gte: query.minDiscount } }),
+      ...(query.maxPrice !== undefined && { originalPriceNpr: { lte: query.maxPrice } }),
       ...(query.category && {
         OR: [
           { categoryId: query.category },
@@ -219,7 +221,46 @@ export class OfferService {
   }
 
   /**
+   * Toggle favourite status for an offer (save/unsave)
+   */
+  async toggleFavourite(userId: string, offerId: string): Promise<{ isFavourite: boolean }> {
+    const existing = await this.prisma.userFavourite.findUnique({
+      where: { userId_offerId: { userId, offerId } },
+    });
+    if (existing) {
+      await this.prisma.userFavourite.delete({ where: { id: existing.id } });
+      return { isFavourite: false };
+    }
+    await this.prisma.userFavourite.create({ data: { userId, offerId } });
+    return { isFavourite: true };
+  }
+
+  /**
+   * Get paginated list of favourite offers for authenticated user
+   */
+  async getFavourites(
+    userId: string,
+    page = 1,
+    limit = 20,
+  ): Promise<{ offers: OfferSummary[]; count: number; total: number }> {
+    const skip = (page - 1) * Math.min(limit, 100);
+    const [favourites, total] = await this.prisma.$transaction([
+      this.prisma.userFavourite.findMany({
+        where: { userId },
+        skip,
+        take: Math.min(limit, 100),
+        orderBy: { createdAt: 'desc' },
+        include: { offer: { select: OFFER_SELECT_FIELDS } },
+      }),
+      this.prisma.userFavourite.count({ where: { userId } }),
+    ]);
+    const offers = favourites.map((f) => mapOfferToSummary(f.offer as any));
+    return { offers, count: offers.length, total };
+  }
+
+  /**
    * Get home page data with featured, trending, and popular offers
+
    * Optimized single query for mobile home screen
    */
   async getHomeData(): Promise<{
@@ -330,6 +371,32 @@ export class OfferService {
       );
     }
 
+    // Check active offer quota if offer is being created as active (default true)
+    if (dto.isActive ?? true) {
+      const subscription = await this.prisma.subscriptionRecord.findFirst({
+        where: { merchantId },
+        orderBy: { createdAt: 'desc' },
+        include: { plan: true },
+      });
+
+      const entitlements = (subscription?.plan?.entitlementsJson as any) || { maxActiveOffers: 7 };
+      const maxOffers = entitlements.maxActiveOffers ?? 7;
+
+      if (maxOffers !== -1) {
+        const activeOffersCount = await this.prisma.offer.count({
+          where: { merchantId, isActive: true },
+        });
+
+        if (activeOffersCount >= maxOffers) {
+          throw new ForbiddenException({
+            message: `Active offer limit reached (${activeOffersCount}/${maxOffers}). Please upgrade your plan to publish more offers.`,
+            errorCode: 'QUOTA_OFFERS_EXCEEDED',
+            quota: { used: activeOffersCount, max: maxOffers },
+          });
+        }
+      }
+    }
+
     const offer = await this.prisma.offer.create({
       data: {
         merchantId,
@@ -388,6 +455,31 @@ export class OfferService {
       throw new ForbiddenException(
         'You can only update offers belonging to your merchant',
       );
+    }
+
+    if (dto.isActive === true) {
+      const subscription = await this.prisma.subscriptionRecord.findFirst({
+        where: { merchantId },
+        orderBy: { createdAt: 'desc' },
+        include: { plan: true },
+      });
+
+      const entitlements = (subscription?.plan?.entitlementsJson as any) || { maxActiveOffers: 7 };
+      const maxOffers = entitlements.maxActiveOffers ?? 7;
+
+      if (maxOffers !== -1) {
+        const activeOffersCount = await this.prisma.offer.count({
+          where: { merchantId, isActive: true, NOT: { id: offerId } },
+        });
+
+        if (activeOffersCount >= maxOffers) {
+          throw new ForbiddenException({
+            message: `Active offer limit reached (${activeOffersCount + 1}/${maxOffers}). Please upgrade your plan to publish more offers.`,
+            errorCode: 'QUOTA_OFFERS_EXCEEDED',
+            quota: { used: activeOffersCount + 1, max: maxOffers },
+          });
+        }
+      }
     }
 
     const offer = await this.prisma.offer.update({

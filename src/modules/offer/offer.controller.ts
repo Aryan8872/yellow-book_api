@@ -6,6 +6,7 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -17,6 +18,8 @@ import {
 import { OfferService, OfferSummary } from './offer.service';
 import { QueryOffersDto } from './dto/offer.dto';
 import { Public } from '../auth/auth.decorators';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('Offers')
 @Controller('offers')
@@ -31,6 +34,19 @@ export class OfferController {
   })
   async getHomeData() {
     return this.offerService.getHomeData();
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Get('favourites')
+  @ApiOperation({ summary: 'Get authenticated user\'s saved/favourite offers' })
+  @ApiOkResponse({ description: 'Paginated list of favourite offers' })
+  async getFavourites(
+    @CurrentUser('id') userId: string,
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+  ) {
+    return this.offerService.getFavourites(userId, Number(page), Number(limit));
   }
 
   @Public()
@@ -94,4 +110,18 @@ export class OfferController {
     await this.offerService.incrementRedemptionCount(id);
     return { success: true };
   }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post(':id/favourite')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Toggle offer favourite (save/unsave)' })
+  @ApiResponse({ status: 200, description: 'Favourite toggled', schema: { type: 'object', properties: { isFavourite: { type: 'boolean' } } } })
+  async toggleFavourite(
+    @Param('id') offerId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<{ isFavourite: boolean }> {
+    return this.offerService.toggleFavourite(userId, offerId);
+  }
 }
+

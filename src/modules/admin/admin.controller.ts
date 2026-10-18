@@ -227,4 +227,133 @@ export class AdminController {
   ) {
     return this.adminService.reviewFraudFlag(dto, admin.id);
   }
+
+  @Get('audit-logs')
+  @ApiOperation({ summary: 'List system audit logs with filtering and pagination' })
+  @ApiOkResponse({ description: 'Paginated list of system audit logs' })
+  async listAuditLogs(
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('entity') entity?: string,
+    @Query('action') action?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.adminService.getAuditLogs({ page, limit, entity, action, search });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PLANS & MONETIZATION
+  // ─────────────────────────────────────────────────────────────────────────
+
+  @Post('plans')
+  @ApiOperation({ summary: 'Create a new subscription plan/tier' })
+  async createPlan(
+    @Body() dto: any,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.adminService.createPlan(dto, admin.id);
+  }
+
+  @Get('plans')
+  @ApiOperation({ summary: 'List all subscription plans' })
+  async listPlans(
+    @Query('audience') audience?: string,
+    @Query('includeArchived') includeArchived?: string,
+  ) {
+    return this.adminService.listPlans({
+      audience,
+      includeArchived: includeArchived === 'true',
+    });
+  }
+
+  @Patch('plans/:id')
+  @ApiOperation({ summary: 'Update an existing subscription plan' })
+  async updatePlan(
+    @Param('id') id: string,
+    @Body() dto: any,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.adminService.updatePlan(id, dto, admin.id);
+  }
+
+  @Delete('plans/:id')
+  @ApiOperation({ summary: 'Soft delete / archive a subscription plan' })
+  async deletePlan(
+    @Param('id') id: string,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.adminService.deletePlan(id, admin.id);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // TRIAL CONFIGURATION & OVERRIDES
+  // ─────────────────────────────────────────────────────────────────────────
+
+  @Get('trials/config')
+  @ApiOperation({ summary: 'Get global trial configurations' })
+  async getTrialConfigs() {
+    return this.adminService.getTrialConfigs();
+  }
+
+  @Patch('trials/config')
+  @ApiOperation({ summary: 'Update global trial settings' })
+  async updateTrialConfig(
+    @Body() dto: any,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.adminService.updateTrialConfig(dto, admin.id);
+  }
+
+  @Post('subscriptions/override')
+  @ApiOperation({ summary: 'Manually grant, extend, or override a user/merchant subscription' })
+  async overrideSubscription(
+    @Body() dto: any,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.adminService.overrideSubscription(dto, admin.id);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAYMENTS & TRANSACTIONS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  @Get('payments')
+  @ApiOperation({ summary: 'List all payment transactions with filters' })
+  async listPayments(
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('gateway') gateway?: string,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.adminService.listPayments({ page, limit, gateway, status, search });
+  }
+
+  @Post('payments/:id/verify-manual')
+  @ApiOperation({ summary: 'Manually verify and resolve a payment transaction (Admin only)' })
+  async verifyManualPayment(
+    @Param('id') id: string,
+    @Body('notes') notes: string,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.adminService.verifyManualPayment(id, admin.id, notes);
+  }
+
+  @Get('merchants/:id/billing')
+  @ApiOperation({ summary: 'Get detailed billing, quotas and subscription status of a merchant' })
+  async getMerchantBilling(@Param('id') id: string) {
+    return this.adminService.getMerchantBilling(id);
+  }
+
+  @Post('push/broadcast')
+  @ApiOperation({ summary: 'Send push notification broadcast to all subscribed users (Admin only)' })
+  @ApiResponse({ status: 200, schema: { type: 'object', properties: { sent: { type: 'boolean' }, messageId: { type: 'string', nullable: true } } } })
+  async broadcastPush(
+    @Body('title') title: string,
+    @Body('body') body: string,
+    @Body('data') data?: Record<string, string>,
+  ) {
+    return this.adminService.broadcastPush({ title, body, data });
+  }
 }
+

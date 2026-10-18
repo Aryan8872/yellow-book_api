@@ -16,6 +16,7 @@ async function main() {
 
   // Clean existing data (for development only)
   console.log('🧹 Cleaning existing data...');
+  await prisma.userFavourite.deleteMany();
   await prisma.redemptionSession.deleteMany();
   await prisma.offer.deleteMany();
   await prisma.merchantStaff.deleteMany();
@@ -534,6 +535,18 @@ async function main() {
   });
 
   console.log(`✅ Created ${redemptionRecords.length} redemption sessions across multiple days`);
+
+  // Seed sample favourites for consumer
+  console.log('❤️ Seeding sample user favourites...');
+  await prisma.userFavourite.createMany({
+    data: [
+      { userId: sampleCustomer.id, offerId: createdOffers[0].id },
+      { userId: sampleCustomer.id, offerId: createdOffers[1].id },
+      { userId: sampleCustomer.id, offerId: createdOffers[2].id },
+    ],
+  });
+  console.log('✅ Created 3 sample user favourites');
+
   console.log('🎉 Seed completed successfully!');
 }
 

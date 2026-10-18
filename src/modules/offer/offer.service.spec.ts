@@ -60,6 +60,7 @@ describe('OfferService', () => {
     offer: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -188,18 +189,20 @@ describe('OfferService', () => {
         estimatedSavingsNpr: 500,
       } as any;
 
+      const createdOffer = buildOfferFixture({ id: 'offer-1', ...dto, merchantId });
+
       mockPrismaService.merchant.findUnique.mockResolvedValue({
         id: merchantId,
         status: 'ACTIVE',
       });
-      mockPrismaService.offer.create.mockResolvedValue(
-        buildOfferFixture({ id: 'offer-1', ...dto, merchantId }),
-      );
+      mockPrismaService.offer.create.mockResolvedValue(createdOffer);
+      mockPrismaService.offer.findUnique.mockResolvedValue(createdOffer);
 
       const result = await service.createOffer(merchantId, dto);
 
       expect(result).toHaveProperty('id');
       expect(mockPrismaService.offer.create).toHaveBeenCalled();
+      expect(mockPrismaService.offer.findUnique).toHaveBeenCalled();
       expect(mockMetricsService.offersCreated.inc).toHaveBeenCalledWith({
         merchant_id: merchantId,
       });

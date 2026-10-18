@@ -14,6 +14,7 @@ import {
   MaxLength,
   MinLength,
   IsUrl,
+  ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -71,6 +72,21 @@ import { Type } from 'class-transformer';
     @IsNumber()
     @IsOptional()
     radiusKm?: number;
+
+    @ApiPropertyOptional({ example: 20, description: 'Minimum discount percentage (0-100)' })
+    @Type(() => Number)
+    @IsNumber()
+    @Min(0)
+    @Max(100)
+    @IsOptional()
+    minDiscount?: number;
+
+    @ApiPropertyOptional({ example: 5000, description: 'Maximum original price in NPR' })
+    @Type(() => Number)
+    @IsNumber()
+    @Min(0)
+    @IsOptional()
+    maxPrice?: number;
 
     @ApiPropertyOptional({ example: 1, description: 'Page number (1-indexed)' })
     @Type(() => Number)
@@ -160,7 +176,7 @@ export class CreateOfferDto {
   })
   @IsArray()
   @IsUrl({}, { each: true, message: 'Invalid image URL' })
-  @MaxLength(10, { each: true, message: 'Maximum 10 images allowed' })
+  @ArrayMaxSize(10, { message: 'Maximum 10 images allowed' })
   @IsOptional()
   images?: string[];
 
@@ -172,7 +188,7 @@ export class CreateOfferDto {
   @IsArray()
   @IsString({ each: true })
   @MaxLength(50, { each: true, message: 'Each highlight must be less than 50 characters' })
-  @MaxLength(5, { message: 'Maximum 5 highlights allowed' })
+  @ArrayMaxSize(5, { message: 'Maximum 5 highlights allowed' })
   @IsOptional()
   highlights?: string[];
 
@@ -272,6 +288,7 @@ export class UpdateOfferDto {
   })
   @IsArray()
   @IsString({ each: true })
+  @ArrayMaxSize(10, { message: 'Maximum 10 images allowed' })
   @IsOptional()
   images?: string[];
 
@@ -281,6 +298,8 @@ export class UpdateOfferDto {
   })
   @IsArray()
   @IsString({ each: true })
+  @MaxLength(50, { each: true, message: 'Each highlight must be less than 50 characters' })
+  @ArrayMaxSize(5, { message: 'Maximum 5 highlights allowed' })
   @IsOptional()
   highlights?: string[];
 

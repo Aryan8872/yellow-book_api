@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { Prisma, MerchantStatus, UserRole } from '@prisma/client';
 import { ListMerchantsDto } from './dto/list-merchants.dto';
@@ -43,7 +43,7 @@ export class AdminService {
 
     const where: Prisma.MerchantWhereInput = {};
 
-    if (status) {
+    if (status && (status as any) !== 'all') {
       where.status = status;
     }
 
@@ -399,7 +399,7 @@ export class AdminService {
 
     const where: Prisma.UserWhereInput = {};
 
-    if (role) {
+    if (role && (role as any) !== 'all') {
       where.role = role;
     }
 
@@ -752,5 +752,614 @@ export class AdminService {
         user,
       } : null,
     };
+  }
+
+  async getAuditLogs(params: {
+    page?: number;
+    limit?: number;
+    entity?: string;
+    action?: string;
+    search?: string;
+  }) {
+    const page = Math.max(1, Number(params.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(params.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.AuditLogWhereInput = {};
+    if (params.entity && params.entity !== 'all') {
+      where.entity = params.entity;
+    }
+    if (params.action && params.action !== 'all') {
+      where.action = params.action;
+    }
+    if (params.search) {
+      where.OR = [
+        { entityId: { contains: params.search, mode: 'insensitive' } },
+        { action: { contains: params.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [logs, total] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          actor: {
+            select: { id: true, name: true, email: true, role: true },
+          },
+          merchant: {
+            select: { id: true, name: true },
+          },
+        },
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+
+    return {
+      data: logs,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrevious: page > 1,
+      },
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SUBSCRIPTION PLANS & MONETIZATION
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async createPlan(dto: any, adminId: string) {
+    const existing = await this.prisma.subscriptionPlan.findUnique({
+      where: { code: dto.code },
+    });
+    if (existing) {
+      throw new BadRequestException(`Plan code ${dto.code} already exists`);
+    }
+
+    const plan = await this.prisma.subscriptionPlan.create({
+      data: {
+        code: dto.code,
+        name: dto.name,
+        description: dto.description,
+        audience: dto.audience,
+        priceNpr: dto.priceNpr,
+        billingCycle: dto.billingCycle,
+        durationDays: dto.durationDays ?? 30,
+        trialDays: dto.trialDays ?? 0,
+        isActive: dto.isActive ?? true,
+        isPublic: dto.isPublic ?? true,
+        entitlementsJson: dto.entitlements,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        entity: 'SubscriptionPlan',
+        entityId: plan.id,
+        action: 'create',
+        actorId: adminId,
+        metadata: { code: plan.code, audience: plan.audience, priceNpr: plan.priceNpr },
+      },
+    });
+
+    return plan;
+  }
+
+  async listPlans(params?: { audience?: any; includeArchived?: boolean }) {
+    const where: any = {};
+    if (params?.audience && params.audience !== 'all') {
+      where.audience = params.audience;
+    }
+    if (!params?.includeArchived) {
+      where.isArchived = false;
+    }
+
+    return this.prisma.subscriptionPlan.findMany({
+      where,
+      orderBy: [{ audience: 'asc' }, { priceNpr: 'asc' }],
+    });
+  }
+
+  async updatePlan(id: string, dto: any, adminId: string) {
+    const plan = await this.prisma.subscriptionPlan.findUnique({ where: { id } });
+    if (!plan) throw new NotFoundException('Subscription plan not found');
+
+    const updated = await this.prisma.subscriptionPlan.update({
+      where: { id },
+      data: {
+        ...(dto.name && { name: dto.name }),
+        ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.priceNpr !== undefined && { priceNpr: dto.priceNpr }),
+        ...(dto.billingCycle && { billingCycle: dto.billingCycle }),
+        ...(dto.durationDays !== undefined && { durationDays: dto.durationDays }),
+        ...(dto.trialDays !== undefined && { trialDays: dto.trialDays }),
+        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+        ...(dto.isPublic !== undefined && { isPublic: dto.isPublic }),
+        ...(dto.entitlements && { entitlementsJson: dto.entitlements }),
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        entity: 'SubscriptionPlan',
+        entityId: id,
+        action: 'update',
+        actorId: adminId,
+        metadata: { changes: dto },
+      },
+    });
+
+    return updated;
+  }
+
+  async deletePlan(id: string, adminId: string) {
+    const plan = await this.prisma.subscriptionPlan.findUnique({ where: { id } });
+    if (!plan) throw new NotFoundException('Subscription plan not found');
+
+    // Soft delete / archive to protect existing subscribers
+    const updated = await this.prisma.subscriptionPlan.update({
+      where: { id },
+      data: {
+        isActive: false,
+        isArchived: true,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        entity: 'SubscriptionPlan',
+        entityId: id,
+        action: 'delete_archive',
+        actorId: adminId,
+        metadata: { planCode: plan.code },
+      },
+    });
+
+    return { message: 'Plan archived successfully. Active subscriptions remain intact.' };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // GLOBAL TRIAL CONFIGURATION
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async getTrialConfigs() {
+    return this.prisma.systemTrialConfig.findMany();
+  }
+
+  async updateTrialConfig(dto: any, adminId: string) {
+    const config = await this.prisma.systemTrialConfig.upsert({
+      where: { audience: dto.audience },
+      create: {
+        audience: dto.audience,
+        isEnabled: dto.isEnabled ?? true,
+        defaultPeriodDays: dto.defaultPeriodDays ?? 180,
+        unlimitedRedeems: dto.unlimitedRedeems ?? true,
+        notes: dto.notes,
+      },
+      update: {
+        ...(dto.isEnabled !== undefined && { isEnabled: dto.isEnabled }),
+        ...(dto.defaultPeriodDays !== undefined && { defaultPeriodDays: dto.defaultPeriodDays }),
+        ...(dto.unlimitedRedeems !== undefined && { unlimitedRedeems: dto.unlimitedRedeems }),
+        ...(dto.notes !== undefined && { notes: dto.notes }),
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        entity: 'SystemTrialConfig',
+        entityId: config.id,
+        action: 'update',
+        actorId: adminId,
+        metadata: { audience: dto.audience, isEnabled: config.isEnabled, defaultPeriodDays: config.defaultPeriodDays },
+      },
+    });
+
+    return config;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SUBSCRIPTION MANUAL OVERRIDES & EXCEPTIONS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async overrideSubscription(dto: any, adminId: string) {
+    if (!dto.merchantId && !dto.userId) {
+      throw new BadRequestException('Either merchantId or userId must be specified');
+    }
+
+    const plan = await this.prisma.subscriptionPlan.findUnique({ where: { id: dto.planId } });
+    if (!plan) throw new NotFoundException('Plan not found');
+
+    const durationDays = dto.customDays || plan.durationDays || 30;
+    const now = new Date();
+    const periodEnd = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+
+    let whereClause: any = {};
+    if (dto.merchantId) whereClause.merchantId = dto.merchantId;
+    if (dto.userId) whereClause.userId = dto.userId;
+
+    const existing = await this.prisma.subscriptionRecord.findFirst({
+      where: whereClause,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    let subscription;
+    if (existing) {
+      // Stack duration on top of current period if not expired
+      const baseDate = existing.currentPeriodEnd > now ? existing.currentPeriodEnd : now;
+      const stackedEnd = new Date(baseDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
+
+      subscription = await this.prisma.subscriptionRecord.update({
+        where: { id: existing.id },
+        data: {
+          planId: plan.id,
+          status: 'ACTIVE',
+          isTrial: dto.isTrial ?? false,
+          currentPeriodStart: now,
+          currentPeriodEnd: stackedEnd,
+          isManualOverride: true,
+          overrideReason: dto.reason,
+          overrideAdminId: adminId,
+        },
+      });
+    } else {
+      subscription = await this.prisma.subscriptionRecord.create({
+        data: {
+          planId: plan.id,
+          merchantId: dto.merchantId,
+          userId: dto.userId,
+          status: 'ACTIVE',
+          isTrial: dto.isTrial ?? false,
+          startedAt: now,
+          currentPeriodStart: now,
+          currentPeriodEnd: periodEnd,
+          isManualOverride: true,
+          overrideReason: dto.reason,
+          overrideAdminId: adminId,
+        },
+      });
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        entity: 'SubscriptionRecord',
+        entityId: subscription.id,
+        action: 'manual_override',
+        actorId: adminId,
+        merchantId: dto.merchantId,
+        metadata: {
+          planCode: plan.code,
+          durationDays,
+          currentPeriodEnd: subscription.currentPeriodEnd,
+          reason: dto.reason,
+        },
+      },
+    });
+
+    return subscription;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAYMENTS & TRANSACTIONS LEDGER
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async listPayments(params?: {
+    page?: number;
+    limit?: number;
+    gateway?: string;
+    status?: string;
+    search?: string;
+  }) {
+    const page = Math.max(1, Number(params?.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(params?.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.PaymentTransactionWhereInput = {};
+    if (params?.gateway && params.gateway !== 'all') {
+      where.gateway = params.gateway as any;
+    }
+    if (params?.status && params.status !== 'all') {
+      where.status = params.status as any;
+    }
+    if (params?.search) {
+      where.OR = [
+        { orderId: { contains: params.search, mode: 'insensitive' } },
+        { gatewayRefId: { contains: params.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [payments, total] = await Promise.all([
+      this.prisma.paymentTransaction.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: { select: { id: true, name: true, email: true, phone: true } },
+          subscription: {
+            include: {
+              plan: { select: { id: true, code: true, name: true, priceNpr: true } },
+            },
+          },
+          invoice: true,
+        },
+      }),
+      this.prisma.paymentTransaction.count({ where }),
+    ]);
+
+    return {
+      data: payments,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrevious: page > 1,
+      },
+    };
+  }
+
+  async verifyManualPayment(transactionId: string, adminId: string, notes?: string) {
+    const transaction = await this.prisma.paymentTransaction.findUnique({
+      where: { id: transactionId },
+    });
+
+    if (!transaction) {
+      throw new NotFoundException('Payment transaction not found');
+    }
+
+    if (transaction.status === 'SUCCESS') {
+      return { success: true, message: 'Transaction is already verified and marked as SUCCESS' };
+    }
+
+    const now = new Date();
+
+    // Find the associated subscription plan based on amount or existing subscription
+    const plan = await this.prisma.subscriptionPlan.findFirst({
+      where: { priceNpr: transaction.amountNpr, isActive: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const planDurationDays = plan?.durationDays || 30;
+
+    // Check existing subscription
+    const whereClause: any = transaction.merchantId
+      ? { merchantId: transaction.merchantId }
+      : { userId: transaction.userId };
+
+    const existingSub = await this.prisma.subscriptionRecord.findFirst({
+      where: whereClause,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    let subscription;
+    if (existingSub) {
+      const baseDate = existingSub.currentPeriodEnd > now ? existingSub.currentPeriodEnd : now;
+      const newPeriodEnd = new Date(baseDate.getTime() + planDurationDays * 24 * 60 * 60 * 1000);
+
+      subscription = await this.prisma.subscriptionRecord.update({
+        where: { id: existingSub.id },
+        data: {
+          status: 'ACTIVE',
+          isTrial: false,
+          currentPeriodStart: now,
+          currentPeriodEnd: newPeriodEnd,
+          isManualOverride: true,
+          overrideReason: notes || 'Manually verified by admin',
+          overrideAdminId: adminId,
+        },
+      });
+    } else if (plan) {
+      const newPeriodEnd = new Date(now.getTime() + planDurationDays * 24 * 60 * 60 * 1000);
+      subscription = await this.prisma.subscriptionRecord.create({
+        data: {
+          planId: plan.id,
+          merchantId: transaction.merchantId,
+          userId: transaction.userId,
+          status: 'ACTIVE',
+          isTrial: false,
+          startedAt: now,
+          currentPeriodStart: now,
+          currentPeriodEnd: newPeriodEnd,
+          isManualOverride: true,
+          overrideReason: notes || 'Manually verified by admin',
+          overrideAdminId: adminId,
+        },
+      });
+    }
+
+    // Mark payment success
+    const updatedTx = await this.prisma.paymentTransaction.update({
+      where: { id: transaction.id },
+      data: {
+        status: 'SUCCESS',
+        gatewayRefId: transaction.gatewayRefId || `MANUAL-${adminId.slice(-6)}`,
+        paidAt: now,
+        subscriptionId: subscription?.id,
+        failureReason: null,
+      },
+    });
+
+    // Create invoice if none exists
+    const existingInvoice = await this.prisma.invoice.findUnique({
+      where: { paymentId: transaction.id },
+    });
+
+    if (!existingInvoice && subscription) {
+      const invoiceNumber = `INV-${now.getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
+      await this.prisma.invoice.create({
+        data: {
+          invoiceNumber,
+          subscriptionId: subscription.id,
+          paymentId: transaction.id,
+          amountNpr: transaction.amountNpr,
+          status: 'PAID',
+          merchantId: transaction.merchantId,
+          userId: transaction.userId,
+        },
+      });
+    }
+
+    // Audit log
+    await this.prisma.auditLog.create({
+      data: {
+        entity: 'PaymentTransaction',
+        entityId: transaction.id,
+        action: 'verify_manual',
+        actorId: adminId,
+        metadata: {
+          orderId: transaction.orderId,
+          amountNpr: Number(transaction.amountNpr),
+          notes,
+        },
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Transaction manually verified and subscription activated successfully',
+      transaction: updatedTx,
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MERCHANT BILLING OVERVIEW & QUOTA TRACKING
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async getMerchantBilling(merchantId: string) {
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+    });
+    if (!merchant) throw new NotFoundException('Merchant not found');
+
+    // 1. Fetch current subscription
+    let subscription = await this.prisma.subscriptionRecord.findFirst({
+      where: { merchantId },
+      orderBy: { createdAt: 'desc' },
+      include: { plan: true },
+    });
+
+    const now = new Date();
+
+    // If no subscription, check if default founding partner or trial is active
+    if (!subscription) {
+      const foundingPlan = await this.prisma.subscriptionPlan.findFirst({
+        where: { code: 'MERCHANT_FOUNDING' },
+      });
+      if (foundingPlan) {
+        subscription = {
+          id: 'trial_sub',
+          planId: foundingPlan.id,
+          merchantId,
+          userId: null,
+          status: 'ACTIVE' as any,
+          isTrial: true,
+          startedAt: merchant.createdAt,
+          currentPeriodStart: merchant.createdAt,
+          currentPeriodEnd: new Date(merchant.createdAt.getTime() + 180 * 24 * 60 * 60 * 1000),
+          gracePeriodEndsAt: null,
+          cancelledAt: null,
+          autoRenew: true,
+          isManualOverride: false,
+          overrideReason: null,
+          overrideAdminId: null,
+          createdAt: merchant.createdAt,
+          updatedAt: merchant.createdAt,
+          plan: foundingPlan,
+        };
+      }
+    }
+
+    // 2. Compute remaining days
+    const periodEnd = subscription?.currentPeriodEnd || now;
+    const diffMs = periodEnd.getTime() - now.getTime();
+    const remainingDays = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+
+    // 3. Quota usage
+    const [branchCount, activeOfferCount] = await Promise.all([
+      this.prisma.merchantBranch.count({ where: { merchantId } }),
+      this.prisma.offer.count({ where: { merchantId, isActive: true } }),
+    ]);
+
+    const entitlements = (subscription?.plan?.entitlementsJson as any) || {};
+
+    return {
+      merchantId,
+      merchantName: merchant.name,
+      subscription: subscription ? {
+        id: subscription.id,
+        status: subscription.status,
+        isTrial: subscription.isTrial,
+        currentPeriodStart: subscription.currentPeriodStart,
+        currentPeriodEnd: subscription.currentPeriodEnd,
+        remainingDays,
+        isExpiringSoon: remainingDays <= 14,
+        isExpired: remainingDays === 0,
+        plan: subscription.plan,
+      } : null,
+      quotas: {
+        branches: {
+          used: branchCount,
+          max: entitlements.maxBranches ?? 3,
+          isUnlimited: entitlements.maxBranches === -1,
+          hasReachedLimit: entitlements.maxBranches !== -1 && branchCount >= (entitlements.maxBranches ?? 3),
+        },
+        offers: {
+          used: activeOfferCount,
+          max: entitlements.maxActiveOffers ?? 7,
+          isUnlimited: entitlements.maxActiveOffers === -1,
+          hasReachedLimit: entitlements.maxActiveOffers !== -1 && activeOfferCount >= (entitlements.maxActiveOffers ?? 7),
+        },
+        featuredBoosts: {
+          allowed: entitlements.featuredBoostCount ?? 0,
+        },
+      },
+    };
+  }
+
+  /**
+   * Broadcast a push notification to all users subscribed to the 'offers_nepal_deals' FCM topic.
+   * Gracefully skips if FIREBASE_SERVICE_ACCOUNT_JSON env var is not configured.
+   */
+  async broadcastPush(dto: {
+    title: string;
+    body: string;
+    data?: Record<string, string>;
+  }): Promise<{ sent: boolean; messageId?: string }> {
+    const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    if (!serviceAccountJson) {
+      new Logger('AdminService').warn(
+        'FIREBASE_SERVICE_ACCOUNT_JSON not set — push broadcast skipped.',
+      );
+      return { sent: false };
+    }
+
+    try {
+      // Lazy-load firebase-admin to avoid errors when not configured
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const admin = require('firebase-admin');
+      if (!admin.apps.length) {
+        admin.initializeApp({
+          credential: admin.credential.cert(JSON.parse(serviceAccountJson)),
+        });
+      }
+      const messageId = await admin.messaging().send({
+        notification: { title: dto.title, body: dto.body },
+        data: dto.data ?? {},
+        topic: 'offers_nepal_deals',
+      });
+      return { sent: true, messageId };
+    } catch (err: any) {
+      new Logger('AdminService').error(
+        `Push broadcast failed: ${err?.message ?? err}`,
+      );
+      return { sent: false };
+    }
   }
 }

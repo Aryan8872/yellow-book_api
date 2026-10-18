@@ -41,11 +41,19 @@ export class CreateMerchantDto {
   @IsOptional()
   address?: string;
 
-  @IsUrl({}, { message: 'Invalid logo URL' })
+  @IsString()
   @IsOptional()
   logoUrl?: string;
 
-  @IsUrl({}, { message: 'Invalid cover URL' })
+  @IsString()
+  @IsOptional()
+  logoImage?: string;
+
+  @IsString()
   @IsOptional()
   coverUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  coverImage?: string;
 }

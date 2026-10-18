@@ -28,6 +28,34 @@ enum SubscriptionStatus {
   IN_GRACE_PERIOD
   CANCELLED
   EXPIRED
+  SUSPENDED
+}
+
+enum PlanAudience {
+  MERCHANT
+  USER
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  BIANNUAL
+  ANNUAL
+  LIFETIME
+}
+
+enum PaymentGateway {
+  ESEWA
+  KHALTI
+  MANUAL_ADMIN
+}
+
+enum PaymentStatus {
+  INITIATED
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
 }
 
 enum MerchantStatus {
@@ -122,6 +150,9 @@ model User {
 
   // Relations
   subscription     Subscription?
+  subscriptionRecords SubscriptionRecord[]
+  paymentTransactions PaymentTransaction[]
+  invoices         Invoice[]
   oauthAccounts    OAuthAccount[]
   redemptions      RedemptionSession[]
   familyGroup      FamilyGroup?        @relation("FamilyOwner")
@@ -129,6 +160,7 @@ model User {
   familyGroupId    String?             @map("family_group_id")
   merchantStaff    MerchantStaff?
   auditLogs        AuditLog[]          @relation("AuditActor")
+  favourites       UserFavourite[]
 
   @@index([email])
   @@index([phone])
@@ -171,16 +203,131 @@ model FamilyGroup {
 // SUBSCRIPTION MODULE
 // ─────────────────────────────────────────────────────────────────────────────
 
+model SubscriptionPlan {
+  id               String           @id @default(cuid())
+  code             String           @unique
+  name             String
+  description      String?
+  audience         PlanAudience     // MERCHANT | USER
+  priceNpr         Decimal          @map("price_npr") @db.Decimal(10, 2)
+  billingCycle     BillingCycle     @default(MONTHLY) @map("billing_cycle")
+  durationDays     Int              @default(30) @map("duration_days")
+  trialDays        Int              @default(0) @map("trial_days")
+  isActive         Boolean          @default(true) @map("is_active")
+  isArchived       Boolean          @default(false) @map("is_archived")
+  isPublic         Boolean          @default(true) @map("is_public")
+  entitlementsJson Json             @map("entitlements_json")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  subscriptions    SubscriptionRecord[]
+
+  @@index([audience, isActive])
+  @@map("subscription_plans")
+}
+
+model SubscriptionRecord {
+  id                 String             @id @default(cuid())
+  planId             String             @map("plan_id")
+  merchantId         String?            @map("merchant_id")
+  userId             String?            @map("user_id")
+  status             SubscriptionStatus @default(ACTIVE)
+  isTrial            Boolean            @default(false) @map("is_trial")
+  startedAt          DateTime           @default(now()) @map("started_at")
+  currentPeriodStart DateTime           @default(now()) @map("current_period_start")
+  currentPeriodEnd   DateTime           @map("current_period_end")
+  gracePeriodEndsAt  DateTime?          @map("grace_period_ends_at")
+  cancelledAt        DateTime?          @map("cancelled_at")
+  autoRenew          Boolean            @default(true) @map("auto_renew")
+  isManualOverride   Boolean            @default(false) @map("is_manual_override")
+  overrideReason     String?            @map("override_reason")
+  overrideAdminId    String?            @map("override_admin_id")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  plan               SubscriptionPlan   @relation(fields: [planId], references: [id])
+  merchant           Merchant?          @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  user               User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoices           Invoice[]
+  payments           PaymentTransaction[]
+
+  @@index([merchantId, status])
+  @@index([userId, status])
+  @@index([currentPeriodEnd, status])
+  @@map("subscription_records")
+}
+
+model SystemTrialConfig {
+  id                String       @id @default(cuid())
+  audience          PlanAudience @unique
+  isEnabled         Boolean      @default(true) @map("is_enabled")
+  defaultPeriodDays Int          @default(180) @map("default_period_days")
+  unlimitedRedeems  Boolean      @default(true) @map("unlimited_redeems")
+  notes             String?
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  @@map("system_trial_configs")
+}
+
+model PaymentTransaction {
+  id              String             @id @default(cuid())
+  subscriptionId  String?            @map("subscription_id")
+  merchantId      String?            @map("merchant_id")
+  userId          String?            @map("user_id")
+  gateway         PaymentGateway
+  gatewayRefId    String?            @map("gateway_ref_id")
+  orderId         String             @unique @map("order_id")
+  amountNpr       Decimal            @map("amount_npr") @db.Decimal(10, 2)
+  status          PaymentStatus      @default(INITIATED)
+  idempotencyKey  String             @unique @map("idempotency_key")
+  gatewayResponse Json?              @map("gateway_response")
+  failureReason   String?            @map("failure_reason")
+  paidAt          DateTime?          @map("paid_at")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  subscription    SubscriptionRecord? @relation(fields: [subscriptionId], references: [id])
+  user            User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoice         Invoice?
+
+  @@index([orderId])
+  @@index([gatewayRefId])
+  @@index([status])
+  @@map("payment_transactions")
+}
+
+model Invoice {
+  id             String             @id @default(cuid())
+  invoiceNumber  String             @unique @map("invoice_number")
+  subscriptionId String             @map("subscription_id")
+  paymentId      String?            @unique @map("payment_id")
+  merchantId     String?            @map("merchant_id")
+  userId         String?            @map("user_id")
+  amountNpr      Decimal            @map("amount_npr") @db.Decimal(10, 2)
+  taxAmountNpr   Decimal            @default(0) @map("tax_amount_npr") @db.Decimal(10, 2)
+  status         String             @default("PAID")
+  pdfUrl         String?            @map("pdf_url")
+  sentEmailTo    String?            @map("sent_email_to")
+  sentAt         DateTime?          @map("sent_at")
+  createdAt      DateTime           @default(now()) @map("created_at")
+
+  subscription   SubscriptionRecord @relation(fields: [subscriptionId], references: [id])
+  user           User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payment        PaymentTransaction? @relation(fields: [paymentId], references: [id])
+
+  @@map("invoices")
+}
+
+// Backward compatibility legacy models
 model Plan {
   id           String  @id @default(cuid())
   name         String  @unique
   description  String?
   priceNpr     Decimal @map("price_npr") @db.Decimal(10, 2)
-  billingCycle String  @map("billing_cycle") // MONTHLY | ANNUAL
+  billingCycle String  @map("billing_cycle")
   isActive     Boolean @default(true) @map("is_active")
-  benefitsJson Json    @map("benefits_json") // Feature flags for this plan
+  benefitsJson Json    @map("benefits_json")
 
-  // Relations
   subscriptions Subscription[]
 
   @@map("plans")
@@ -200,7 +347,6 @@ model Subscription {
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
 
-  // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan Plan @relation(fields: [planId], references: [id])
 
@@ -210,10 +356,10 @@ model Subscription {
 }
 
 model PspWebhookEvent {
-  id          String   @id // Use PSP event ID as PK for natural idempotency
-  psp         String // 'stripe' | 'esewa' | 'khalti'
+  id          String   @id
+  psp         String
   eventType   String   @map("event_type")
-  payload     Json // Raw webhook payload for auditing
+  payload     Json
   processedAt DateTime @default(now()) @map("processed_at")
 
   @@map("psp_webhook_events")
@@ -246,6 +392,7 @@ model Merchant {
   staff     MerchantStaff[]
   payouts   Payout[]
   auditLogs AuditLog[]       @relation("MerchantAudit")
+  subscriptions SubscriptionRecord[]
 
   @@index([status])
   @@map("merchants")
@@ -327,6 +474,7 @@ model Offer {
   merchant    Merchant            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   category    Category            @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   redemptions RedemptionSession[]
+  favourites  UserFavourite[]
 
   @@index([merchantId])
   @@index([categoryId])
@@ -334,6 +482,25 @@ model Offer {
   @@index([trendingScore])
   @@index([redemptionCount])
   @@map("offers")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FAVOURITES MODULE
+// ─────────────────────────────────────────────────────────────────────────────
+
+model UserFavourite {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  offerId   String   @map("offer_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  offer Offer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, offerId])
+  @@index([userId])
+  @@index([offerId])
+  @@map("user_favourites")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
