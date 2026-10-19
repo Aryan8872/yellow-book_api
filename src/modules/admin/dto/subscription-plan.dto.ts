@@ -54,7 +54,7 @@ export class CreateSubscriptionPlanDto {
   @IsBoolean()
   isPublic?: boolean;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Entitlement quotas and feature flags JSON',
     example: {
       maxBranches: 5,
@@ -64,8 +64,16 @@ export class CreateSubscriptionPlanDto {
       analyticsTier: 'ADVANCED',
     },
   })
+  @IsOptional()
   @IsObject()
-  entitlements: Record<string, any>;
+  entitlements?: Record<string, any>;
+
+  @ApiPropertyOptional({
+    description: 'Alias for entitlements (for direct JSON body compatibility)',
+  })
+  @IsOptional()
+  @IsObject()
+  entitlementsJson?: Record<string, any>;
 }
 
 export class UpdateSubscriptionPlanDto {
@@ -116,4 +124,9 @@ export class UpdateSubscriptionPlanDto {
   @IsOptional()
   @IsObject()
   entitlements?: Record<string, any>;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsObject()
+  entitlementsJson?: Record<string, any>;
 }

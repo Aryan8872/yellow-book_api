@@ -822,6 +822,8 @@ export class AdminService {
       throw new BadRequestException(`Plan code ${dto.code} already exists`);
     }
 
+    const entitlements = dto.entitlementsJson ?? dto.entitlements ?? {};
+
     const plan = await this.prisma.subscriptionPlan.create({
       data: {
         code: dto.code,
@@ -834,7 +836,7 @@ export class AdminService {
         trialDays: dto.trialDays ?? 0,
         isActive: dto.isActive ?? true,
         isPublic: dto.isPublic ?? true,
-        entitlementsJson: dto.entitlements,
+        entitlementsJson: entitlements,
       },
     });
 
@@ -860,15 +862,43 @@ export class AdminService {
       where.isArchived = false;
     }
 
-    return this.prisma.subscriptionPlan.findMany({
+    const plans = await this.prisma.subscriptionPlan.findMany({
       where,
+      include: {
+        _count: {
+          select: {
+            subscriptions: true,
+          },
+        },
+        subscriptions: {
+          where: { status: 'ACTIVE' },
+          select: { id: true },
+        },
+      },
       orderBy: [{ audience: 'asc' }, { priceNpr: 'asc' }],
+    });
+
+    return plans.map((plan) => {
+      const activeCount = plan.subscriptions?.length || 0;
+      const totalCount = plan._count?.subscriptions || 0;
+      const { subscriptions, _count, ...rest } = plan as any;
+      return {
+        ...rest,
+        activeSubscribersCount: activeCount,
+        totalSubscribersCount: totalCount,
+      };
     });
   }
 
   async updatePlan(id: string, dto: any, adminId: string) {
     const plan = await this.prisma.subscriptionPlan.findUnique({ where: { id } });
     if (!plan) throw new NotFoundException('Subscription plan not found');
+
+    const entitlements = dto.entitlementsJson !== undefined
+      ? dto.entitlementsJson
+      : dto.entitlements !== undefined
+        ? dto.entitlements
+        : undefined;
 
     const updated = await this.prisma.subscriptionPlan.update({
       where: { id },
@@ -881,7 +911,7 @@ export class AdminService {
         ...(dto.trialDays !== undefined && { trialDays: dto.trialDays }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
         ...(dto.isPublic !== undefined && { isPublic: dto.isPublic }),
-        ...(dto.entitlements && { entitlementsJson: dto.entitlements }),
+        ...(entitlements !== undefined && { entitlementsJson: entitlements }),
       },
     });
 
