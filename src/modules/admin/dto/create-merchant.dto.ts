@@ -39,6 +39,7 @@ export class CreateMerchantDto {
   vatNumber?: string;
 
   @IsString()
+  @MaxLength(500, { message: 'Address must be less than 500 characters' })
   @IsOptional()
   address?: string;
 

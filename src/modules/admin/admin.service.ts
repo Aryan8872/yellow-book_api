@@ -284,16 +284,20 @@ export class AdminService {
     });
 
     // Log audit entry
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'Merchant',
-        entityId: dto.merchantId,
-        action: 'approve',
-        actorId: adminId,
-        merchantId: dto.merchantId,
-        metadata: { notes: dto.notes, planId: dto.planId ?? null, durationDays: dto.durationDays ?? null },
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'Merchant',
+          entityId: dto.merchantId,
+          action: 'approve',
+          actorId: adminId,
+          merchantId: dto.merchantId,
+          metadata: { notes: dto.notes, planId: dto.planId ?? null, durationDays: dto.durationDays ?? null },
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return updated;
   }
@@ -324,16 +328,20 @@ export class AdminService {
     });
 
     // Log audit entry with mandatory reason
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'Merchant',
-        entityId: dto.merchantId,
-        action: 'reject',
-        actorId: adminId,
-        merchantId: dto.merchantId,
-        metadata: { reason: dto.reason.trim() },
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'Merchant',
+          entityId: dto.merchantId,
+          action: 'reject',
+          actorId: adminId,
+          merchantId: dto.merchantId,
+          metadata: { reason: dto.reason.trim() },
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return updated;
   }
@@ -347,6 +355,9 @@ export class AdminService {
           where: { isActive: true },
           take: 10,
           orderBy: { createdAt: 'desc' },
+          include: {
+            category: { select: { id: true, name: true, slug: true } },
+          },
         },
         subscriptions: {
           orderBy: { createdAt: 'desc' },
@@ -398,20 +409,25 @@ export class AdminService {
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.websiteUrl !== undefined && { websiteUrl: dto.websiteUrl }),
         ...(dto.coverUrl !== undefined && { coverUrl: dto.coverUrl }),
+        ...(dto.address !== undefined && { address: dto.address }),
       },
     });
 
     // Log audit entry
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'Merchant',
-        entityId: merchantId,
-        action: 'update',
-        actorId: adminId,
-        merchantId: merchantId,
-        metadata: { changes: dto as any },
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'Merchant',
+          entityId: merchantId,
+          action: 'update',
+          actorId: adminId,
+          merchantId: merchantId,
+          metadata: { changes: dto as any },
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return updated;
   }
@@ -437,16 +453,20 @@ export class AdminService {
     });
 
     // Log audit entry
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'Merchant',
-        entityId: dto.merchantId,
-        action: 'suspend',
-        actorId: adminId,
-        merchantId: dto.merchantId,
-        metadata: { reason: dto.reason },
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'Merchant',
+          entityId: dto.merchantId,
+          action: 'suspend',
+          actorId: adminId,
+          merchantId: dto.merchantId,
+          metadata: { reason: dto.reason },
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return updated;
   }
@@ -472,16 +492,20 @@ export class AdminService {
     });
 
     // Log audit entry
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'Merchant',
-        entityId: dto.merchantId,
-        action: 'reactivate',
-        actorId: adminId,
-        merchantId: dto.merchantId,
-        metadata: { notes: dto.notes },
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'Merchant',
+          entityId: dto.merchantId,
+          action: 'reactivate',
+          actorId: adminId,
+          merchantId: dto.merchantId,
+          metadata: { notes: dto.notes },
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return updated;
   }
@@ -507,6 +531,7 @@ export class AdminService {
           websiteUrl: dto.websiteUrl ?? null,
           registrationNumber: dto.panNumber ?? null,
           vatNumber: dto.vatNumber ?? null,
+          address: dto.address ?? null,
           logoUrl: dto.logoUrl ?? null,
           coverUrl: dto.coverUrl ?? null,
           status: MerchantStatus.ACTIVE,
@@ -544,16 +569,20 @@ export class AdminService {
       return newMerchant;
     });
 
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'Merchant',
-        entityId: merchant.id,
-        action: 'create_merchant',
-        actorId: adminId,
-        merchantId: merchant.id,
-        metadata: { name: merchant.name, contactEmail: merchant.contactEmail, planId: dto.planId ?? null },
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'Merchant',
+          entityId: merchant.id,
+          action: 'create_merchant',
+          actorId: adminId,
+          merchantId: merchant.id,
+          metadata: { name: merchant.name, contactEmail: merchant.contactEmail, planId: dto.planId ?? null },
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return merchant;
   }
@@ -651,15 +680,19 @@ export class AdminService {
       await this.assignDefaultUserPlan(user.id, adminId);
     }
 
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'User',
-        entityId: user.id,
-        action: 'create_user',
-        actorId: adminId,
-        metadata: { email: user.email, role: user.role },
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'User',
+          entityId: user.id,
+          action: 'create_user',
+          actorId: adminId,
+          metadata: { email: user.email, role: user.role },
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return user;
   }
@@ -807,15 +840,19 @@ export class AdminService {
     });
 
     // Log audit entry using existing schema
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'User',
-        entityId: dto.userId,
-        action: 'suspend',
-        actorId: adminId,
-        metadata: { reason: dto.reason },
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'User',
+          entityId: dto.userId,
+          action: 'suspend',
+          actorId: adminId,
+          metadata: { reason: dto.reason },
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return updated;
   }
@@ -842,15 +879,19 @@ export class AdminService {
     });
 
     // Log audit entry using existing schema
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'User',
-        entityId: dto.userId,
-        action: 'activate',
-        actorId: adminId,
-        metadata: { notes: dto.notes },
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'User',
+          entityId: dto.userId,
+          action: 'activate',
+          actorId: adminId,
+          metadata: { notes: dto.notes },
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return updated;
   }
@@ -952,15 +993,19 @@ export class AdminService {
     });
 
     // Log audit entry
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'User',
-        entityId: userId,
-        action: 'update',
-        actorId: adminId,
-        metadata: { changes: dto as any },
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'User',
+          entityId: userId,
+          action: 'update',
+          actorId: adminId,
+          metadata: { changes: dto as any },
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return updated;
   }
@@ -987,14 +1032,18 @@ export class AdminService {
     });
 
     // Log audit entry
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'User',
-        entityId: userId,
-        action: 'delete',
-        actorId: adminId,
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'User',
+          entityId: userId,
+          action: 'delete',
+          actorId: adminId,
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return { message: 'User deleted successfully' };
   }
@@ -1082,19 +1131,23 @@ export class AdminService {
     });
 
     // Log audit entry using existing schema
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'FraudFlag',
-        entityId: dto.fraudFlagId,
-        action: 'review',
-        actorId: adminId,
-        metadata: {
-          decision: dto.decision,
-          notes: dto.notes,
-          redemptionId: fraudFlag.redemptionId,
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'FraudFlag',
+          entityId: dto.fraudFlagId,
+          action: 'review',
+          actorId: adminId,
+          metadata: {
+            decision: dto.decision,
+            notes: dto.notes,
+            redemptionId: fraudFlag.redemptionId,
+          },
         },
-      },
-    });
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return updated;
   }
@@ -1230,15 +1283,19 @@ export class AdminService {
       },
     });
 
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'SubscriptionPlan',
-        entityId: plan.id,
-        action: 'create',
-        actorId: adminId,
-        metadata: { code: plan.code, audience: plan.audience, priceNpr: plan.priceNpr },
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'SubscriptionPlan',
+          entityId: plan.id,
+          action: 'create',
+          actorId: adminId,
+          metadata: { code: plan.code, audience: plan.audience, priceNpr: plan.priceNpr },
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return plan;
   }
@@ -1305,15 +1362,19 @@ export class AdminService {
       },
     });
 
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'SubscriptionPlan',
-        entityId: id,
-        action: 'update',
-        actorId: adminId,
-        metadata: { changes: dto },
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'SubscriptionPlan',
+          entityId: id,
+          action: 'update',
+          actorId: adminId,
+          metadata: { changes: dto },
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return updated;
   }
@@ -1331,15 +1392,19 @@ export class AdminService {
       },
     });
 
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'SubscriptionPlan',
-        entityId: id,
-        action: 'delete_archive',
-        actorId: adminId,
-        metadata: { planCode: plan.code },
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'SubscriptionPlan',
+          entityId: id,
+          action: 'delete_archive',
+          actorId: adminId,
+          metadata: { planCode: plan.code },
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return { message: 'Plan archived successfully. Active subscriptions remain intact.' };
   }
@@ -1370,15 +1435,19 @@ export class AdminService {
       },
     });
 
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'SystemTrialConfig',
-        entityId: config.id,
-        action: 'update',
-        actorId: adminId,
-        metadata: { audience: dto.audience, isEnabled: config.isEnabled, defaultPeriodDays: config.defaultPeriodDays },
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'SystemTrialConfig',
+          entityId: config.id,
+          action: 'update',
+          actorId: adminId,
+          metadata: { audience: dto.audience, isEnabled: config.isEnabled, defaultPeriodDays: config.defaultPeriodDays },
+        },
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return config;
   }
@@ -1496,23 +1565,27 @@ export class AdminService {
       (newPeriodEnd.getTime() - newPeriodStart.getTime()) / (1000 * 60 * 60 * 24),
     );
 
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'SubscriptionRecord',
-        entityId: subscription.id,
-        action: 'manual_override',
-        actorId: adminId,
-        merchantId: dto.merchantId ?? null,
-        metadata: {
-          planCode: plan.code,
-          mode,
-          durationDays,
-          previousPeriodEnd,
-          newPeriodEnd: subscription.currentPeriodEnd,
-          reason: dto.reason,
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'SubscriptionRecord',
+          entityId: subscription.id,
+          action: 'manual_override',
+          actorId: adminId,
+          merchantId: dto.merchantId ?? null,
+          metadata: {
+            planCode: plan.code,
+            mode,
+            durationDays,
+            previousPeriodEnd,
+            newPeriodEnd: subscription.currentPeriodEnd,
+            reason: dto.reason,
+          },
         },
-      },
-    });
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return subscription;
   }
@@ -1680,19 +1753,23 @@ export class AdminService {
     }
 
     // Audit log
-    await this.prisma.auditLog.create({
-      data: {
-        entity: 'PaymentTransaction',
-        entityId: transaction.id,
-        action: 'verify_manual',
-        actorId: adminId,
-        metadata: {
-          orderId: transaction.orderId,
-          amountNpr: Number(transaction.amountNpr),
-          notes,
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'PaymentTransaction',
+          entityId: transaction.id,
+          action: 'verify_manual',
+          actorId: adminId,
+          metadata: {
+            orderId: transaction.orderId,
+            amountNpr: Number(transaction.amountNpr),
+            notes,
+          },
         },
-      },
-    });
+      });
+    } catch (auditErr: any) {
+      new Logger('AdminService').warn(`Audit log skipped: ${auditErr?.message}`);
+    }
 
     return {
       success: true,
