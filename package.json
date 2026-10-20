@@ -20,7 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json --passWithNoTests",
     "backup:db": "bash scripts/backup-database.sh",
     "restore:db": "bash scripts/restore-database.sh",
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "prisma db seed"
   },
   "prisma": {
     "seed": "ts-node --esm prisma/seed.ts"
