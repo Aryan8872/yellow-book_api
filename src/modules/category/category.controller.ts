@@ -17,6 +17,7 @@ import {
   ApiBearerAuth,
   ApiOkResponse,
 } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { CategoryService } from './category.service';
 import {
   CreateCategoryDto,
@@ -32,6 +33,7 @@ export class CategoryController {
   constructor(private readonly categoryService: CategoryService) {}
 
   @Public()
+  @SkipThrottle()
   @Get()
   @ApiOperation({ summary: 'Get all categories' })
   @ApiOkResponse({ description: 'List of categories' })

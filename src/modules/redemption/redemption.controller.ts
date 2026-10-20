@@ -134,4 +134,22 @@ export class RedemptionController {
   async listRedemptions(@Query() dto: ListRedemptionsDto) {
     return this.redemptionService.listRedemptions(dto);
   }
+
+  @Post('redemption/:id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT-auth')
+  @Roles(UserRole.MERCHANT_STAFF, UserRole.MERCHANT_ADMIN, UserRole.ADMIN)
+  @RequireStaffPermission('redeem')
+  @UseGuards(StaffPermissionGuard)
+  @ApiOperation({
+    summary: 'Cancel an active redemption session (staff-permission based)',
+  })
+  @ApiResponse({ status: 200, description: 'Redemption session cancelled' })
+  @ApiResponse({ status: 403, description: 'Not an active staff member / missing redeem permission' })
+  @ApiResponse({ status: 404, description: 'Redemption session not found' })
+  @ApiResponse({ status: 400, description: 'Cannot cancel - session already completed or expired' })
+  async cancelRedemption(@Param('id') id: string, @Req() req: Request) {
+    const user = (req as any).user;
+    return this.redemptionService.cancelRedemption(id, user);
+  }
 }

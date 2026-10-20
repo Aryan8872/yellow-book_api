@@ -28,6 +28,7 @@ import {
   getRedemptionLockKey,
 } from './redemption.utils';
 import { ListRedemptionsDto } from '../admin/dto/list-redemptions.dto';
+import { AppErrorCode } from '../../common/constants/error-codes';
 
 // Offer selection fields for redemption queries
 const OFFER_SELECT_FIELDS = {
@@ -82,11 +83,51 @@ export class RedemptionService {
     user: AuthenticatedUser,
     _dto: RedeemInitDto,
   ): Promise<RedemptionInitResult> {
-    // 1. Subscription entitlement check
-    if (!user.subscriptionActive) {
-      throw new ForbiddenException(
-        'An active OfferNepal subscription is required to redeem vouchers.',
-      );
+    // 1. Subscription entitlement & Free-Tier 3-redemption limit check
+    // Check if user has an active Club subscription or active system trial
+    let isClubActive = user.subscriptionActive;
+    if (!isClubActive) {
+      const activeRecord = await this.prisma.subscriptionRecord.findFirst({
+        where: {
+          userId: user.id,
+          status: 'ACTIVE',
+          currentPeriodEnd: { gt: new Date() },
+        },
+      });
+      if (activeRecord) {
+        isClubActive = true;
+      } else {
+        const userTrialConfig = await this.prisma.systemTrialConfig.findFirst({
+          where: { audience: 'USER', isEnabled: true },
+        });
+        if (userTrialConfig) {
+          isClubActive = true;
+        }
+      }
+    }
+
+    if (!isClubActive) {
+      // Free tier: cap at 3 redemptions per calendar month
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+
+      const monthlyRedeemedCount = await this.prisma.redemptionSession.count({
+        where: {
+          userId: user.id,
+          status: RedemptionStatus.REDEEMED,
+          createdAt: { gte: startOfMonth },
+        },
+      });
+
+      if (monthlyRedeemedCount >= 3) {
+        throw new ForbiddenException({
+          message: 'Free voucher limit reached (3/3 this month). Join OfferNepal Club for unlimited redemptions!',
+          errorCode: 'VOUCHER_LIMIT_REACHED',
+          monthlyUsed: monthlyRedeemedCount,
+          monthlyLimit: 3,
+        });
+      }
     }
 
     // Use transaction to prevent race conditions on redemption limits
@@ -217,9 +258,10 @@ export class RedemptionService {
         .catch((err) => this.logger.error('Failed to expire session', err));
 
       this.metrics.activeRedemptionSessions.dec();
-      throw new BadRequestException(
-        'Redemption code has expired. Please ask customer to regenerate.',
-      );
+      throw new BadRequestException({
+        message: 'Redemption code has expired. Please ask customer to regenerate.',
+        errorCode: AppErrorCode.REDEMPTION_CODE_EXPIRED,
+      });
     }
 
     // Already processed?
@@ -682,5 +724,69 @@ export class RedemptionService {
     }
 
     return staff;
+  }
+
+  /**
+   * Cancel an active redemption session
+   * Only staff with redeem permission can cancel sessions for their merchant
+   */
+  async cancelRedemption(
+    sessionId: string,
+    user: AuthenticatedUser,
+  ): Promise<{ success: boolean; sessionId: string }> {
+    // Load the session with offer relation
+    const session = await this.prisma.redemptionSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        offer: {
+          select: {
+            merchantId: true,
+          },
+        },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Redemption session not found');
+    }
+
+    // Verify staff can act on this merchant
+    await this.assertStaffCanRedeem(user, session.offer.merchantId);
+
+    // Only allow cancellation of INIT or PENDING_SYNC status
+    if (session.status !== RedemptionStatus.INIT && session.status !== RedemptionStatus.PENDING_SYNC) {
+      throw new BadRequestException(
+        `Cannot cancel session with status ${session.status}. Only INIT and PENDING_SYNC can be cancelled.`,
+      );
+    }
+
+    // Update status to REJECTED (using existing status enum)
+    await this.prisma.redemptionSession.update({
+      where: { id: sessionId },
+      data: {
+        status: RedemptionStatus.REJECTED,
+      },
+    });
+
+    // Write audit log
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          entity: 'RedemptionSession',
+          entityId: sessionId,
+          action: 'cancel',
+          actorId: user.id,
+          merchantId: session.offer.merchantId,
+          metadata: {
+            previousStatus: session.status,
+            cancelledBy: user.id,
+          },
+        },
+      });
+    } catch (err: any) {
+      this.logger.error('Failed to write audit log for cancellation', err);
+    }
+
+    return { success: true, sessionId };
   }
 }

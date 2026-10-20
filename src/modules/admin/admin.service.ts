@@ -15,11 +15,18 @@ import { SuspendUserDto } from './dto/suspend-user.dto';
 import { ActivateUserDto } from './dto/activate-user.dto';
 import { ListFraudFlagsDto } from './dto/list-fraud-flags.dto';
 import { ReviewFraudDto, FraudReviewDecision } from './dto/review-fraud.dto';
+import { SubscriptionOverrideMode } from './dto/subscription-override.dto';
 import * as bcrypt from 'bcrypt';
+import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../../infrastructure/redis/redis.constants';
+import { Inject, Optional } from '@nestjs/common';
 
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional() @Inject(REDIS_CLIENT) private readonly redis?: Redis,
+  ) {}
 
   async getDashboardStats() {
     const [totalMerchants, pendingMerchants, totalUsers, activeOffers] = await Promise.all([
@@ -34,6 +41,114 @@ export class AdminService {
       pendingMerchants,
       totalUsers,
       activeOffers,
+    };
+  }
+
+  /**
+   * Retrieves live active sessions (via Redis sliding-window) and real-time active subscriber metrics
+   * partitioned by audience (User Club Members vs Merchant Partners) and plan tiers.
+   */
+  async getLiveSystemMetrics() {
+    const now = new Date();
+    const windowStartMs = Date.now() - 5 * 60 * 1000; // 5-minute sliding window
+
+    // 1. Calculate live active sessions from Redis sliding window
+    let totalLiveSessions = 0;
+    let liveUserSessions = 0;
+    let liveMerchantSessions = 0;
+
+    if (this.redis) {
+      try {
+        // Prune expired sessions older than 5 minutes
+        await this.redis.zremrangebyscore('active_sessions:sliding', '-inf', windowStartMs);
+        // Get all active session keys in window
+        const activeMembers = await this.redis.zrangebyscore('active_sessions:sliding', windowStartMs, '+inf');
+        totalLiveSessions = activeMembers.length;
+        for (const member of activeMembers) {
+          if (member.startsWith('merchant:')) liveMerchantSessions++;
+          else if (member.startsWith('user:')) liveUserSessions++;
+        }
+      } catch (err) {
+        new Logger('AdminService').warn(`Redis live session retrieval fallback: ${(err as any)?.message}`);
+      }
+    }
+
+    // Fallback if Redis is empty / disconnected: derive lower bound from recent activity
+    if (totalLiveSessions === 0) {
+      const recentThreshold = new Date(Date.now() - 15 * 60 * 1000);
+      const [recentLogins, recentRedemptions] = await Promise.all([
+        this.prisma.user.count({ where: { updatedAt: { gte: recentThreshold } } }),
+        this.prisma.redemptionSession.count({ where: { createdAt: { gte: recentThreshold } } }),
+      ]);
+      totalLiveSessions = Math.max(1, recentLogins + recentRedemptions);
+      liveUserSessions = Math.max(1, recentLogins);
+      liveMerchantSessions = Math.max(0, recentRedemptions);
+    }
+
+    // 2. Active Subscribers Breakdown from Prisma (status = ACTIVE and currentPeriodEnd > now)
+    const [
+      activeUserSubsCount,
+      activeMerchantSubsCount,
+      plansWithActiveSubs,
+    ] = await Promise.all([
+      this.prisma.subscriptionRecord.count({
+        where: {
+          status: 'ACTIVE',
+          userId: { not: null },
+          currentPeriodEnd: { gt: now },
+        },
+      }),
+      this.prisma.subscriptionRecord.count({
+        where: {
+          status: 'ACTIVE',
+          merchantId: { not: null },
+          currentPeriodEnd: { gt: now },
+        },
+      }),
+      this.prisma.subscriptionRecord.groupBy({
+        by: ['planId'],
+        where: {
+          status: 'ACTIVE',
+          currentPeriodEnd: { gt: now },
+        },
+        _count: { id: true },
+      }),
+    ]);
+
+    // Attach plan details
+    const planIds = plansWithActiveSubs.map((p) => p.planId);
+    const plansInfo = await this.prisma.subscriptionPlan.findMany({
+      where: { id: { in: planIds } },
+      select: { id: true, code: true, name: true, audience: true, billingCycle: true, priceNpr: true },
+    });
+    const planMap = new Map(plansInfo.map((p) => [p.id, p]));
+
+    const subscribersByPlan = plansWithActiveSubs.map((item) => {
+      const plan = planMap.get(item.planId);
+      return {
+        planId: item.planId,
+        code: plan?.code ?? 'UNKNOWN',
+        name: plan?.name ?? 'Unknown Plan',
+        audience: plan?.audience ?? 'USER',
+        billingCycle: plan?.billingCycle ?? 'MONTHLY',
+        priceNpr: plan?.priceNpr ?? 0,
+        activeCount: item._count.id,
+      };
+    });
+
+    return {
+      liveSessions: {
+        total: totalLiveSessions,
+        users: liveUserSessions,
+        merchants: liveMerchantSessions,
+        windowMinutes: 5,
+      },
+      activeSubscribers: {
+        total: activeUserSubsCount + activeMerchantSubsCount,
+        users: activeUserSubsCount,
+        merchants: activeMerchantSubsCount,
+        byPlan: subscribersByPlan,
+      },
     };
   }
 
@@ -69,14 +184,34 @@ export class AdminService {
         take: limit,
         include: {
           branches: true,
+          // Include active subscription record with plan info for badge display
+          subscriptions: {
+            where: { status: 'ACTIVE' },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            include: {
+              plan: {
+                select: { id: true, code: true, name: true, audience: true, priceNpr: true, billingCycle: true },
+              },
+            },
+          },
         },
         orderBy,
       }),
       this.prisma.merchant.count({ where }),
     ]);
 
+    // Flatten activeSubscription to top-level for clean API surface
+    const data = merchants.map((m) => {
+      const { subscriptions, ...rest } = m as any;
+      return {
+        ...rest,
+        activeSubscription: subscriptions?.[0] ?? null,
+      };
+    });
+
     return {
-      data: merchants,
+      data,
       pagination: {
         page,
         limit,
@@ -101,15 +236,54 @@ export class AdminService {
       throw new BadRequestException('Merchant is not pending review');
     }
 
-    const updated = await this.prisma.merchant.update({
-      where: { id: dto.merchantId },
-      data: {
-        status: MerchantStatus.ACTIVE,
-        onboardedAt: new Date(),
-      },
+    const now = new Date();
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedMerchant = await tx.merchant.update({
+        where: { id: dto.merchantId },
+        data: {
+          status: MerchantStatus.ACTIVE,
+          onboardedAt: now,
+        },
+      });
+
+      // Optionally assign an initial subscription plan upon approval
+      if (dto.planId) {
+        const plan = await tx.subscriptionPlan.findUnique({ where: { id: dto.planId } });
+        if (!plan) throw new NotFoundException(`Subscription plan ${dto.planId} not found`);
+
+        const durationDays = dto.durationDays ?? plan.durationDays ?? 180;
+        const periodEnd = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+
+        // Deactivate any existing subscription for this merchant before creating new one
+        await tx.subscriptionRecord.updateMany({
+          where: { merchantId: dto.merchantId, status: 'ACTIVE' },
+          data: { status: 'CANCELLED', cancelledAt: now },
+        });
+
+        await tx.subscriptionRecord.create({
+          data: {
+            planId: plan.id,
+            merchantId: dto.merchantId,
+            status: 'ACTIVE',
+            isTrial: dto.isTrial ?? false,
+            startedAt: now,
+            currentPeriodStart: now,
+            currentPeriodEnd: periodEnd,
+            isManualOverride: true,
+            overrideReason: dto.notes ?? 'Assigned on merchant approval',
+            overrideAdminId: adminId,
+          },
+        });
+      } else {
+        // Default: assign the active MERCHANT_FOUNDING plan if available (180-day founding partner tier)
+        await this.assignDefaultMerchantPlan(dto.merchantId, adminId, dto.notes, tx as any);
+      }
+
+      return updatedMerchant;
     });
 
-    // Log audit entry using existing schema
+    // Log audit entry
     await this.prisma.auditLog.create({
       data: {
         entity: 'Merchant',
@@ -117,7 +291,7 @@ export class AdminService {
         action: 'approve',
         actorId: adminId,
         merchantId: dto.merchantId,
-        metadata: { notes: dto.notes },
+        metadata: { notes: dto.notes, planId: dto.planId ?? null, durationDays: dto.durationDays ?? null },
       },
     });
 
@@ -137,6 +311,11 @@ export class AdminService {
       throw new BadRequestException('Merchant is not pending review');
     }
 
+    // Enforce non-empty rejection reason
+    if (!dto.reason || !dto.reason.trim()) {
+      throw new BadRequestException('A rejection reason is required');
+    }
+
     const updated = await this.prisma.merchant.update({
       where: { id: dto.merchantId },
       data: {
@@ -144,7 +323,7 @@ export class AdminService {
       },
     });
 
-    // Log audit entry using existing schema
+    // Log audit entry with mandatory reason
     await this.prisma.auditLog.create({
       data: {
         entity: 'Merchant',
@@ -152,7 +331,7 @@ export class AdminService {
         action: 'reject',
         actorId: adminId,
         merchantId: dto.merchantId,
-        metadata: { reason: dto.reason },
+        metadata: { reason: dto.reason.trim() },
       },
     });
 
@@ -169,6 +348,13 @@ export class AdminService {
           take: 10,
           orderBy: { createdAt: 'desc' },
         },
+        subscriptions: {
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          include: {
+            plan: true,
+          },
+        },
         _count: {
           select: {
             branches: true,
@@ -182,7 +368,12 @@ export class AdminService {
       throw new NotFoundException('Merchant not found');
     }
 
-    return merchant;
+    const activeSubscription = merchant.subscriptions.find((s) => s.status === 'ACTIVE') ?? merchant.subscriptions[0] ?? null;
+
+    return {
+      ...merchant,
+      activeSubscription,
+    };
   }
 
   async updateMerchant(merchantId: string, dto: UpdateMerchantDto, adminId: string) {
@@ -304,20 +495,53 @@ export class AdminService {
       throw new BadRequestException('A merchant with this contact email already exists');
     }
 
-    const merchant = await this.prisma.merchant.create({
-      data: {
-        name: dto.name,
-        contactEmail: dto.contactEmail,
-        contactPhone: dto.contactPhone ?? null,
-        description: dto.description ?? null,
-        websiteUrl: dto.websiteUrl ?? null,
-        registrationNumber: dto.panNumber ?? null,
-        vatNumber: dto.vatNumber ?? null,
-        logoUrl: dto.logoUrl ?? null,
-        coverUrl: dto.coverUrl ?? null,
-        status: MerchantStatus.ACTIVE,
-        onboardedAt: new Date(),
-      },
+    const now = new Date();
+
+    const merchant = await this.prisma.$transaction(async (tx) => {
+      const newMerchant = await tx.merchant.create({
+        data: {
+          name: dto.name,
+          contactEmail: dto.contactEmail,
+          contactPhone: dto.contactPhone ?? null,
+          description: dto.description ?? null,
+          websiteUrl: dto.websiteUrl ?? null,
+          registrationNumber: dto.panNumber ?? null,
+          vatNumber: dto.vatNumber ?? null,
+          logoUrl: dto.logoUrl ?? null,
+          coverUrl: dto.coverUrl ?? null,
+          status: MerchantStatus.ACTIVE,
+          onboardedAt: now,
+        },
+      });
+
+      // Optionally assign an initial subscription plan
+      if (dto.planId) {
+        const plan = await tx.subscriptionPlan.findUnique({ where: { id: dto.planId } });
+        if (!plan) throw new NotFoundException(`Subscription plan ${dto.planId} not found`);
+
+        const durationDays = dto.durationDays ?? plan.durationDays ?? 180;
+        const periodEnd = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+
+        await tx.subscriptionRecord.create({
+          data: {
+            planId: plan.id,
+            merchantId: newMerchant.id,
+            status: 'ACTIVE',
+            isTrial: dto.isTrial ?? false,
+            startedAt: now,
+            currentPeriodStart: now,
+            currentPeriodEnd: periodEnd,
+            isManualOverride: true,
+            overrideReason: 'Assigned on manual merchant creation',
+            overrideAdminId: adminId,
+          },
+        });
+      } else {
+        // Default: try to assign the founding partner plan
+        await this.assignDefaultMerchantPlan(newMerchant.id, adminId, 'Auto-assigned on merchant creation', tx as any);
+      }
+
+      return newMerchant;
     });
 
     await this.prisma.auditLog.create({
@@ -327,11 +551,53 @@ export class AdminService {
         action: 'create_merchant',
         actorId: adminId,
         merchantId: merchant.id,
-        metadata: { name: merchant.name, contactEmail: merchant.contactEmail },
+        metadata: { name: merchant.name, contactEmail: merchant.contactEmail, planId: dto.planId ?? null },
       },
     });
 
     return merchant;
+  }
+
+  /**
+   * Assigns the default MERCHANT_FOUNDING plan to a merchant.
+   * Silently skips if no founding plan is configured — avoids blocking the create/approve flow.
+   */
+  private async assignDefaultMerchantPlan(
+    merchantId: string,
+    adminId: string,
+    reason?: string,
+    tx?: any,
+  ): Promise<void> {
+    const db = tx ?? this.prisma;
+    try {
+      const foundingPlan = await db.subscriptionPlan.findFirst({
+        where: { code: 'MERCHANT_FOUNDING', isActive: true, isArchived: false },
+      });
+      if (!foundingPlan) return; // no default plan configured; skip silently
+
+      const now = new Date();
+      const durationDays = foundingPlan.durationDays ?? 180;
+      const periodEnd = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+
+      await db.subscriptionRecord.create({
+        data: {
+          planId: foundingPlan.id,
+          merchantId,
+          status: 'ACTIVE',
+          isTrial: true,
+          startedAt: now,
+          currentPeriodStart: now,
+          currentPeriodEnd: periodEnd,
+          isManualOverride: true,
+          overrideReason: reason ?? 'Auto-assigned founding partner plan',
+          overrideAdminId: adminId,
+        },
+      });
+    } catch (err) {
+      new Logger('AdminService').warn(
+        `assignDefaultMerchantPlan for ${merchantId} skipped: ${(err as any)?.message}`,
+      );
+    }
   }
 
   async createUser(dto: CreateUserDto, adminId: string) {
@@ -380,6 +646,11 @@ export class AdminService {
       });
     }
 
+    // Auto-assign the default free tier plan for standard user accounts
+    if (user.role === UserRole.USER) {
+      await this.assignDefaultUserPlan(user.id, adminId);
+    }
+
     await this.prisma.auditLog.create({
       data: {
         entity: 'User',
@@ -391,6 +662,57 @@ export class AdminService {
     });
 
     return user;
+  }
+
+  /**
+   * Assigns the default free-tier USER plan to a newly created user.
+   * Looks for an active plan with code 'USER_STANDARD' or priceNpr = 0.
+   * Silently skips if no free plan is configured — avoids blocking registration.
+   */
+  async assignDefaultUserPlan(userId: string, adminId?: string): Promise<void> {
+    try {
+      // Prefer explicit code match, fall back to free (price = 0) plan
+      const freePlan = await this.prisma.subscriptionPlan.findFirst({
+        where: {
+          OR: [
+            { code: 'USER_STANDARD', isActive: true, isArchived: false },
+            { audience: 'USER', priceNpr: 0, isActive: true, isArchived: false },
+          ],
+        },
+        orderBy: [{ code: 'asc' }], // USER_STANDARD sorts first if both exist
+      });
+
+      if (!freePlan) return; // no default plan configured; skip silently
+
+      // Don't assign if user already has an active subscription
+      const existingSub = await this.prisma.subscriptionRecord.findFirst({
+        where: { userId, status: 'ACTIVE' },
+      });
+      if (existingSub) return;
+
+      const now = new Date();
+      const durationDays = freePlan.durationDays ?? 30;
+      const periodEnd = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+
+      await this.prisma.subscriptionRecord.create({
+        data: {
+          planId: freePlan.id,
+          userId,
+          status: 'ACTIVE',
+          isTrial: false,
+          startedAt: now,
+          currentPeriodStart: now,
+          currentPeriodEnd: periodEnd,
+          isManualOverride: !!adminId, // true for admin creation, false for self-registration
+          overrideReason: adminId ? 'Auto-assigned free tier on admin user creation' : null,
+          overrideAdminId: adminId ?? null,
+        },
+      });
+    } catch (err) {
+      new Logger('AdminService').warn(
+        `assignDefaultUserPlan for ${userId} skipped: ${(err as any)?.message}`,
+      );
+    }
   }
 
   async listUsers(dto: ListUsersDto) {
@@ -420,12 +742,34 @@ export class AdminService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
+        include: {
+          // Include active subscription record with plan info for badge display
+          subscriptionRecords: {
+            where: { status: 'ACTIVE' },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            include: {
+              plan: {
+                select: { id: true, code: true, name: true, audience: true, priceNpr: true, billingCycle: true },
+              },
+            },
+          },
+        },
       }),
       this.prisma.user.count({ where }),
     ]);
 
+    // Flatten activeSubscription to top-level, strip sensitive auth fields
+    const data = users.map((u) => {
+      const { subscriptionRecords, passwordHash, refreshToken, ...rest } = u as any;
+      return {
+        ...rest,
+        activeSubscription: subscriptionRecords?.[0] ?? null,
+      };
+    });
+
     return {
-      data: users,
+      data,
       pagination: {
         page,
         limit,
@@ -521,9 +865,51 @@ export class AdminService {
         role: true,
         isActive: true,
         createdAt: true,
+        updatedAt: true,
         phone: true,
         avatarUrl: true,
         isVerified: true,
+        // merchantStaff gives us the merchant context for staff users
+        merchantStaff: {
+          select: { merchantId: true },
+        },
+        // Active subscription with plan details
+        subscriptionRecords: {
+          where: { status: 'ACTIVE' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+            isTrial: true,
+            startedAt: true,
+            currentPeriodStart: true,
+            currentPeriodEnd: true,
+            gracePeriodEndsAt: true,
+            autoRenew: true,
+            isManualOverride: true,
+            overrideReason: true,
+            plan: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                audience: true,
+                priceNpr: true,
+                billingCycle: true,
+                durationDays: true,
+                entitlementsJson: true,
+              },
+            },
+          },
+        },
+        // All subscription history
+        _count: {
+          select: {
+            subscriptionRecords: true,
+            redemptions: true,
+          },
+        },
       },
     });
 
@@ -531,7 +917,11 @@ export class AdminService {
       throw new NotFoundException('User not found');
     }
 
-    return user;
+    const { subscriptionRecords, ...rest } = user as any;
+    return {
+      ...rest,
+      activeSubscription: subscriptionRecords?.[0] ?? null,
+    };
   }
 
   async updateUser(userId: string, dto: UpdateUserDto, adminId: string) {
@@ -1005,33 +1395,80 @@ export class AdminService {
     const plan = await this.prisma.subscriptionPlan.findUnique({ where: { id: dto.planId } });
     if (!plan) throw new NotFoundException('Plan not found');
 
-    const durationDays = dto.customDays || plan.durationDays || 30;
     const now = new Date();
-    const periodEnd = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+    // Resolve the override mode — default to REPLACE if not specified
+    const mode: SubscriptionOverrideMode = dto.mode ?? SubscriptionOverrideMode.REPLACE;
 
     let whereClause: any = {};
     if (dto.merchantId) whereClause.merchantId = dto.merchantId;
     if (dto.userId) whereClause.userId = dto.userId;
 
     const existing = await this.prisma.subscriptionRecord.findFirst({
+      where: { ...whereClause, status: 'ACTIVE' },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Fallback: find the most recent record even if not ACTIVE
+    const existingAny = existing ?? await this.prisma.subscriptionRecord.findFirst({
       where: whereClause,
       orderBy: { createdAt: 'desc' },
     });
 
-    let subscription;
-    if (existing) {
-      // Stack duration on top of current period if not expired
-      const baseDate = existing.currentPeriodEnd > now ? existing.currentPeriodEnd : now;
-      const stackedEnd = new Date(baseDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
+    let newPeriodStart: Date;
+    let newPeriodEnd: Date;
 
+    switch (mode) {
+      case SubscriptionOverrideMode.REPLACE: {
+        // Set exact duration starting from now — completely resets existing period
+        const days = dto.customDays ?? plan.durationDays ?? 30;
+        newPeriodStart = now;
+        newPeriodEnd = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+        break;
+      }
+      case SubscriptionOverrideMode.EXTEND: {
+        // Stack additional days on top of current period (or now if expired)
+        const days = dto.customDays ?? plan.durationDays ?? 30;
+        const base = existingAny?.currentPeriodEnd && existingAny.currentPeriodEnd > now
+          ? existingAny.currentPeriodEnd
+          : now;
+        newPeriodStart = now;
+        newPeriodEnd = new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
+        break;
+      }
+      case SubscriptionOverrideMode.RENEW: {
+        // Fresh cycle using the plan's default duration (customDays overrides if provided)
+        const days = dto.customDays ?? plan.durationDays ?? 30;
+        newPeriodStart = now;
+        newPeriodEnd = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+        break;
+      }
+      default:
+        throw new BadRequestException(`Unknown override mode: ${mode}`);
+    }
+
+    // Capture previousPeriodEnd before updates.
+    // If no explicit DB record exists yet, check if entity had an active virtual trial (e.g. merchant onboarding 180 days)
+    let previousPeriodEnd: Date | null = existingAny?.currentPeriodEnd ?? null;
+    if (!previousPeriodEnd && dto.merchantId) {
+      const merchant = await this.prisma.merchant.findUnique({
+        where: { id: dto.merchantId },
+        select: { createdAt: true },
+      });
+      if (merchant?.createdAt) {
+        previousPeriodEnd = new Date(merchant.createdAt.getTime() + 180 * 24 * 60 * 60 * 1000);
+      }
+    }
+
+    let subscription;
+    if (existingAny) {
       subscription = await this.prisma.subscriptionRecord.update({
-        where: { id: existing.id },
+        where: { id: existingAny.id },
         data: {
           planId: plan.id,
           status: 'ACTIVE',
           isTrial: dto.isTrial ?? false,
-          currentPeriodStart: now,
-          currentPeriodEnd: stackedEnd,
+          currentPeriodStart: newPeriodStart,
+          currentPeriodEnd: newPeriodEnd,
           isManualOverride: true,
           overrideReason: dto.reason,
           overrideAdminId: adminId,
@@ -1041,13 +1478,13 @@ export class AdminService {
       subscription = await this.prisma.subscriptionRecord.create({
         data: {
           planId: plan.id,
-          merchantId: dto.merchantId,
-          userId: dto.userId,
+          merchantId: dto.merchantId ?? null,
+          userId: dto.userId ?? null,
           status: 'ACTIVE',
           isTrial: dto.isTrial ?? false,
           startedAt: now,
-          currentPeriodStart: now,
-          currentPeriodEnd: periodEnd,
+          currentPeriodStart: newPeriodStart,
+          currentPeriodEnd: newPeriodEnd,
           isManualOverride: true,
           overrideReason: dto.reason,
           overrideAdminId: adminId,
@@ -1055,17 +1492,23 @@ export class AdminService {
       });
     }
 
+    const durationDays = Math.ceil(
+      (newPeriodEnd.getTime() - newPeriodStart.getTime()) / (1000 * 60 * 60 * 24),
+    );
+
     await this.prisma.auditLog.create({
       data: {
         entity: 'SubscriptionRecord',
         entityId: subscription.id,
         action: 'manual_override',
         actorId: adminId,
-        merchantId: dto.merchantId,
+        merchantId: dto.merchantId ?? null,
         metadata: {
           planCode: plan.code,
+          mode,
           durationDays,
-          currentPeriodEnd: subscription.currentPeriodEnd,
+          previousPeriodEnd,
+          newPeriodEnd: subscription.currentPeriodEnd,
           reason: dto.reason,
         },
       },

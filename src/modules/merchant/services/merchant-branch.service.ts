@@ -19,6 +19,29 @@ export class MerchantBranchService {
       throw new NotFoundException('Merchant not found');
     }
 
+    // Enforce branch quota based on subscription plan
+    const subscription = await this.prisma.subscriptionRecord.findFirst({
+      where: { merchantId },
+      orderBy: { createdAt: 'desc' },
+      include: { plan: true },
+    });
+
+    const entitlements = (subscription?.plan?.entitlementsJson as any) || { maxBranches: 3 };
+    const maxBranches = entitlements.maxBranches ?? 3;
+
+    if (maxBranches !== -1) {
+      const currentBranchCount = await this.prisma.merchantBranch.count({
+        where: { merchantId },
+      });
+      if (currentBranchCount >= maxBranches) {
+        throw new ForbiddenException({
+          message: `Branch limit reached (${currentBranchCount}/${maxBranches}). Please upgrade your plan to add more branches.`,
+          errorCode: 'QUOTA_BRANCHES_EXCEEDED',
+          quota: { used: currentBranchCount, max: maxBranches },
+        });
+      }
+    }
+
     return this.prisma.merchantBranch.create({
       data: {
         merchantId,
@@ -27,9 +50,46 @@ export class MerchantBranchService {
     });
   }
 
-  async getBranches(merchantId: string, user: AuthenticatedUser) {
+  async getBranches(merchantId: string, dto?: { page?: number; limit?: number; search?: string; isActive?: boolean }, user?: AuthenticatedUser) {
+    const page = dto?.page && dto.page > 0 ? Number(dto.page) : 1;
+    const limit = dto?.limit && dto.limit > 0 ? Number(dto.limit) : 20;
+    const skip = (page - 1) * limit;
+
     const where: Prisma.MerchantBranchWhereInput = { merchantId };
-    return this.prisma.merchantBranch.findMany({ where });
+
+    if (dto?.isActive !== undefined) {
+      where.isActive = dto.isActive;
+    }
+
+    if (dto?.search?.trim()) {
+      const q = dto.search.trim();
+      where.OR = [
+        { name: { contains: q, mode: 'insensitive' } },
+        { address: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+
+    const [branches, total] = await Promise.all([
+      this.prisma.merchantBranch.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.merchantBranch.count({ where }),
+    ]);
+
+    return {
+      data: branches,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+        hasNext: page * limit < total,
+        hasPrevious: page > 1,
+      },
+    };
   }
 
   async listAllBranches(dto: ListBranchesDto) {

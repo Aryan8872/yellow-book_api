@@ -2,6 +2,12 @@ import { IsString, IsNotEmpty, IsEnum, IsNumber, Min, IsOptional, IsBoolean } fr
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PlanAudience } from '@prisma/client';
 
+export enum SubscriptionOverrideMode {
+  REPLACE = 'REPLACE', // Sets exact duration from now (resets any existing period)
+  EXTEND = 'EXTEND',   // Stacks duration on top of current period end
+  RENEW = 'RENEW',     // Starts a fresh cycle of the plan's default duration from now
+}
+
 export class UpdateTrialConfigDto {
   @ApiProperty({ enum: PlanAudience })
   @IsEnum(PlanAudience)
@@ -45,7 +51,17 @@ export class OverrideSubscriptionDto {
   @IsNotEmpty()
   planId: string;
 
-  @ApiPropertyOptional({ description: 'Custom duration in days from now (e.g. 60 for 2 months)' })
+  @ApiPropertyOptional({
+    enum: SubscriptionOverrideMode,
+    description:
+      'REPLACE: sets exact duration from now (default). EXTEND: stacks days on current period. RENEW: fresh cycle using plan default duration.',
+    default: SubscriptionOverrideMode.REPLACE,
+  })
+  @IsOptional()
+  @IsEnum(SubscriptionOverrideMode)
+  mode?: SubscriptionOverrideMode;
+
+  @ApiPropertyOptional({ description: 'Custom duration in days (required for REPLACE/EXTEND, ignored for RENEW unless provided)' })
   @IsOptional()
   @IsNumber()
   @Min(1)

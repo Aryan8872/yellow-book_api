@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -18,6 +18,7 @@ import { MerchantStaffService } from '../services/merchant-staff.service';
 import { CreateStaffDto } from '../dto/create-staff.dto';
 import { UpdateStaffDto } from '../dto/update-staff.dto';
 import { UpdatePinDto } from '../dto/update-pin.dto';
+import { ListMerchantStaffDto } from '../dto/list-staff.dto';
 
 @ApiTags('Merchants - Staff & Security')
 @ApiBearerAuth('JWT-auth')
@@ -45,10 +46,14 @@ export class MerchantStaffController {
   @Get(':merchantId/staff')
   @UseGuards(MerchantOwnershipGuard)
   @ApiOperation({ summary: 'Get all staff members for a merchant' })
-  @ApiOkResponse({ description: 'List of staff members for the merchant' })
+  @ApiOkResponse({ description: 'Paginated list of staff members for the merchant' })
   @ApiResponse({ status: 403, description: 'Not authorized to view staff for this merchant' })
-  async getStaff(@Param('merchantId') merchantId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.staffService.getStaff(merchantId, user);
+  async getStaff(
+    @Param('merchantId') merchantId: string,
+    @Query() dto: ListMerchantStaffDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.staffService.getStaff(merchantId, dto, user);
   }
 
   @Put(':merchantId/staff/:staffId')

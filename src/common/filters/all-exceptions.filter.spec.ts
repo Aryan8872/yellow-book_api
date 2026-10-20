@@ -43,7 +43,7 @@ describe('AllExceptionsFilter', () => {
     expect(JSON.stringify(sentPayload)).not.toContain('password_hash');
   });
 
-  it('should sanitize Prisma P2002 unique constraint errors without leaking field names', () => {
+  it('should sanitize Prisma P2002 unique constraint errors for email field', () => {
     const prismaError = {
       code: 'P2002',
       meta: { target: ['email'] },
@@ -55,8 +55,8 @@ describe('AllExceptionsFilter', () => {
     expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
     const sentPayload = mockResponse.json.mock.calls[0][0];
 
-    expect(sentPayload.errorCode).toBe(AppErrorCode.DB_UNIQUE_CONSTRAINT_VIOLATION);
-    expect(sentPayload.message).toBe('A record with this information already exists.');
+    expect(sentPayload.errorCode).toBe(AppErrorCode.EMAIL_ALREADY_EXISTS);
+    expect(sentPayload.message).toBe('An account with this email already exists. Please use a different email address.');
     expect(sentPayload.details).toBeUndefined();
     expect(JSON.stringify(sentPayload)).not.toContain('(`email`)');
   });

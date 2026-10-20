@@ -8,11 +8,13 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { NotificationModule } from '../notification/notification.module';
+import { AdminModule } from '../admin/admin.module';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     NotificationModule,
+    AdminModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
@@ -30,3 +32,4 @@ import { NotificationModule } from '../notification/notification.module';
   exports: [AuthService, PassportModule, JwtModule],
 })
 export class AuthModule {}
+

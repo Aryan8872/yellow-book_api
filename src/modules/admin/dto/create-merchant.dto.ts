@@ -1,4 +1,5 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString, IsUrl, MinLength, MaxLength, Matches } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, IsUrl, MinLength, MaxLength, Matches, IsNumber, Min, IsBoolean } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateMerchantDto {
   @IsString()
@@ -56,4 +57,22 @@ export class CreateMerchantDto {
   @IsString()
   @IsOptional()
   coverImage?: string;
+
+  // ─── Initial Subscription (optional) ───────────────────────────────────────
+
+  @ApiPropertyOptional({ description: 'Initial subscription plan ID to assign upon creation' })
+  @IsOptional()
+  @IsString()
+  planId?: string;
+
+  @ApiPropertyOptional({ description: 'Duration in days for the initial subscription (defaults to plan default)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  durationDays?: number;
+
+  @ApiPropertyOptional({ description: 'Whether to mark the initial subscription as a trial', default: false })
+  @IsOptional()
+  @IsBoolean()
+  isTrial?: boolean;
 }

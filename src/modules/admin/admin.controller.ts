@@ -51,6 +51,12 @@ export class AdminController {
     return this.adminService.getDashboardStats();
   }
 
+  @Get('metrics/live')
+  @ApiOperation({ summary: 'Get live active sessions and active subscribers breakdown' })
+  async getLiveMetrics() {
+    return this.adminService.getLiveSystemMetrics();
+  }
+
   @Get('merchants')
   @ApiOperation({ summary: 'List all merchants with filtering and pagination' })
   @ApiOkResponse({ description: 'Paginated list of merchants' })

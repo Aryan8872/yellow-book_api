@@ -53,10 +53,14 @@ export class MerchantBranchController {
   @Get(':merchantId/branches')
   @UseGuards(MerchantOwnershipGuard)
   @ApiOperation({ summary: 'Get all branches for a merchant' })
-  @ApiOkResponse({ description: 'List of branches for the merchant' })
+  @ApiOkResponse({ description: 'Paginated list of branches for the merchant' })
   @ApiResponse({ status: 403, description: 'Not authorized to view branches for this merchant' })
-  async getBranches(@Param('merchantId') merchantId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.branchService.getBranches(merchantId, user);
+  async getBranches(
+    @Param('merchantId') merchantId: string,
+    @Query() dto: ListBranchesDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.branchService.getBranches(merchantId, dto, user);
   }
 
   @Put(':merchantId/branches/:branchId')

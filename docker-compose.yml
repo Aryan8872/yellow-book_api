@@ -6,11 +6,20 @@ services:
     container_name: offernepal-api
     restart: always
     environment:
+      - DATABASE_URL="postgresql://postgres:postgrespass@localhost:5432/OfferNepal"
       - NODE_ENV=production
       - PORT=3000
-      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=debug
+      - REDIS_URL=redis://127.0.0.1:6379
       - JWT_SECRET=change_this_to_a_32_character_minimum_random_secret_in_prod!
       - JWT_REFRESH_SECRET=change_this_to_another_32_character_random_secret!
+      - API_KEY=helloapikey
+      - RESEND_API_KEY=your_resend_api_key_here
+      - EMAIL_FROM=onboarding@resend.dev
+      - GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
+      - GOOGLE_CLIENT_SECRET=your-google-oauth-client-secret
+      - GOOGLE_CALLBACK_URL=http://localhost:3000/api/v1/auth/google/callback
+      - CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080,http://localhost:5173,http://localhost:3001
     ports:
       - "3000:3000"
     depends_on:

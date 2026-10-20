@@ -31,6 +31,7 @@ import {
 } from './auth.utils';
 import { NotificationsService } from '../notification/notifications.service';
 import { ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto } from './dto/auth.dto';
+import { AdminService } from '../admin/admin.service';
 
 /**
  * Identical wording for every reset-token failure so an attacker cannot tell
@@ -52,6 +53,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly notifications: NotificationsService,
+    private readonly adminService: AdminService,
   ) {}
 
   /**
@@ -124,6 +126,9 @@ export class AuthService {
     });
 
     const tokens = await this.generateTokens(newUser);
+
+    // Auto-assign the default free tier plan for new user accounts (fire-and-forget)
+    void this.adminService.assignDefaultUserPlan(newUser.id);
 
     // Fire-and-forget: registration must not depend on an external mail
     // provider's latency, and a delivery failure must not fail signup
@@ -264,7 +269,7 @@ export class AuthService {
       }
 
       // Upsert user by email (link OAuth to existing email account)
-      return tx.user.upsert({
+      const upsertedUser = await tx.user.upsert({
         where: { email: emailKey },
         create: {
           email: emailKey,
@@ -293,7 +298,12 @@ export class AuthService {
         },
         select: USER_SELECT_FIELDS,
       });
+
+      return upsertedUser;
     });
+
+    // Auto-assign the default free tier plan for new OAuth users (fire-and-forget)
+    void this.adminService.assignDefaultUserPlan(user.id);
 
     return this.toSafeUser(user);
   }

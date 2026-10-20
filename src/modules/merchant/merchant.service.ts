@@ -131,9 +131,16 @@ export class MerchantService {
   async updateMerchant(id: string, dto: UpdateMerchantDto, user: AuthenticatedUser) {
     await this.getMerchant(id, user);
 
+    const { logoImage, coverImage, ...rest } = dto as any;
+    const finalData = {
+      ...rest,
+      ...(logoImage !== undefined && { logoUrl: logoImage }),
+      ...(coverImage !== undefined && { coverUrl: coverImage }),
+    };
+
     return this.prisma.merchant.update({
       where: { id },
-      data: dto,
+      data: finalData,
     });
   }
 
@@ -145,8 +152,15 @@ export class MerchantService {
     return this.branchService.createBranch(merchantId, dto, user);
   }
 
-  async getBranches(merchantId: string, user: AuthenticatedUser) {
-    return this.branchService.getBranches(merchantId, user);
+  async getBranches(
+    merchantId: string,
+    dtoOrUser?: { page?: number; limit?: number; search?: string; isActive?: boolean } | AuthenticatedUser,
+    user?: AuthenticatedUser,
+  ) {
+    if (dtoOrUser && 'id' in dtoOrUser && 'role' in dtoOrUser) {
+      return this.branchService.getBranches(merchantId, undefined, dtoOrUser as AuthenticatedUser);
+    }
+    return this.branchService.getBranches(merchantId, dtoOrUser as any, user);
   }
 
   async listAllBranches(dto: ListBranchesDto) {
@@ -169,8 +183,15 @@ export class MerchantService {
     return this.staffService.createStaff(merchantId, dto, user);
   }
 
-  async getStaff(merchantId: string, user: AuthenticatedUser) {
-    return this.staffService.getStaff(merchantId, user);
+  async getStaff(
+    merchantId: string,
+    dtoOrUser?: { page?: number; limit?: number; search?: string; isActive?: boolean } | AuthenticatedUser,
+    user?: AuthenticatedUser,
+  ) {
+    if (dtoOrUser && 'id' in dtoOrUser && 'role' in dtoOrUser) {
+      return this.staffService.getStaff(merchantId, undefined, dtoOrUser as AuthenticatedUser);
+    }
+    return this.staffService.getStaff(merchantId, dtoOrUser as any, user);
   }
 
   async updateStaff(staffId: string, merchantId: string, dto: UpdateStaffDto, user: AuthenticatedUser) {
@@ -349,6 +370,15 @@ export class MerchantService {
         orderBy: { [sortBy]: sortOrder },
         skip: (page - 1) * limit,
         take: limit,
+        include: {
+          category: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+            },
+          },
+        },
       }),
       this.prisma.offer.count({ where }),
     ]);
@@ -399,4 +429,102 @@ export class MerchantService {
   async getMerchantCategoryAnalytics(merchantId: string, dto: TimeRangeDto, user: AuthenticatedUser) {
     return this.analyticsService.getMerchantCategoryAnalytics(merchantId, dto, user);
   }
+
+  // =========================================================================
+  // Merchant Self-Serve Billing & Quotas
+  // =========================================================================
+
+  async getMerchantBilling(merchantId: string) {
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+    });
+    if (!merchant) throw new NotFoundException('Merchant not found');
+
+    // 1. Fetch current subscription
+    let subscription = await this.prisma.subscriptionRecord.findFirst({
+      where: { merchantId },
+      orderBy: { createdAt: 'desc' },
+      include: { plan: true },
+    });
+
+    const now = new Date();
+
+    // If no subscription, check if default founding partner or trial is active
+    if (!subscription) {
+      const foundingPlan = await this.prisma.subscriptionPlan.findFirst({
+        where: { code: 'MERCHANT_FOUNDING' },
+      });
+      if (foundingPlan) {
+        subscription = {
+          id: 'trial_sub',
+          planId: foundingPlan.id,
+          merchantId,
+          userId: null,
+          status: 'ACTIVE' as any,
+          isTrial: true,
+          startedAt: merchant.createdAt,
+          currentPeriodStart: merchant.createdAt,
+          currentPeriodEnd: new Date(merchant.createdAt.getTime() + 180 * 24 * 60 * 60 * 1000),
+          gracePeriodEndsAt: null,
+          cancelledAt: null,
+          autoRenew: true,
+          isManualOverride: false,
+          overrideReason: null,
+          overrideAdminId: null,
+          createdAt: merchant.createdAt,
+          updatedAt: merchant.createdAt,
+          plan: foundingPlan,
+        };
+      }
+    }
+
+    // 2. Compute remaining days
+    const periodEnd = subscription?.currentPeriodEnd || now;
+    const diffMs = periodEnd.getTime() - now.getTime();
+    const remainingDays = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+
+    // 3. Quota usage
+    const [branchCount, activeOfferCount] = await Promise.all([
+      this.prisma.merchantBranch.count({ where: { merchantId } }),
+      this.prisma.offer.count({ where: { merchantId, isActive: true } }),
+    ]);
+
+    const entitlements = (subscription?.plan?.entitlementsJson as any) || {};
+
+    return {
+      merchantId,
+      merchantName: merchant.name,
+      subscription: subscription
+        ? {
+            id: subscription.id,
+            status: subscription.status,
+            isTrial: subscription.isTrial,
+            currentPeriodStart: subscription.currentPeriodStart,
+            currentPeriodEnd: subscription.currentPeriodEnd,
+            remainingDays,
+            isExpiringSoon: remainingDays <= 14,
+            isExpired: remainingDays === 0,
+            plan: subscription.plan,
+          }
+        : null,
+      quotas: {
+        branches: {
+          used: branchCount,
+          max: entitlements.maxBranches ?? 3,
+          isUnlimited: entitlements.maxBranches === -1,
+          hasReachedLimit: entitlements.maxBranches !== -1 && branchCount >= (entitlements.maxBranches ?? 3),
+        },
+        offers: {
+          used: activeOfferCount,
+          max: entitlements.maxActiveOffers ?? 7,
+          isUnlimited: entitlements.maxActiveOffers === -1,
+          hasReachedLimit: entitlements.maxActiveOffers !== -1 && activeOfferCount >= (entitlements.maxActiveOffers ?? 7),
+        },
+        featuredBoosts: {
+          allowed: entitlements.featuredBoostCount ?? 0,
+        },
+      },
+    };
+  }
 }
+

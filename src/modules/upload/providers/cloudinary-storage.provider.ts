@@ -8,20 +8,21 @@ export class CloudinaryStorageProvider implements StorageProvider {
   private readonly logger = new Logger(CloudinaryStorageProvider.name);
 
   constructor(private readonly configService: ConfigService) {
-    const cloudName = this.configService.get<string>('CLOUDINARY_CLOUD_NAME');
-    const apiKey = this.configService.get<string>('CLOUDINARY_API_KEY');
-    const apiSecret = this.configService.get<string>('CLOUDINARY_API_SECRET');
+    const cloudName = this.configService.get<string>('CLOUDINARY_CLOUD_NAME')?.trim();
+    const apiKey = this.configService.get<string>('CLOUDINARY_API_KEY')?.trim();
+    const apiSecret = this.configService.get<string>('CLOUDINARY_API_SECRET')?.trim();
 
-    cloudinary.config({
-      cloud_name: cloudName,
-      api_key: apiKey,
-      api_secret: apiSecret,
-      secure: true,
-    });
-
-    if (!cloudName || !apiKey || !apiSecret) {
+    if (cloudName && apiKey && apiSecret) {
+      cloudinary.config({
+        cloud_name: cloudName,
+        api_key: apiKey,
+        api_secret: apiSecret,
+        secure: true,
+      });
+      this.logger.log(`Cloudinary configured for cloud_name: ${cloudName}`);
+    } else {
       this.logger.warn(
-        'Cloudinary environment variables missing (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET). Uploads might fail if Cloudinary driver is activated.',
+        'Cloudinary environment variables missing or incomplete (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET). Uploads will fail if Cloudinary driver is activated.',
       );
     }
   }
@@ -30,6 +31,16 @@ export class CloudinaryStorageProvider implements StorageProvider {
     file: Express.Multer.File,
     folder: string = 'offernepal',
   ): Promise<UploadResult> {
+    const cloudName = this.configService.get<string>('CLOUDINARY_CLOUD_NAME')?.trim();
+    const apiKey = this.configService.get<string>('CLOUDINARY_API_KEY')?.trim();
+    const apiSecret = this.configService.get<string>('CLOUDINARY_API_SECRET')?.trim();
+
+    if (!cloudName || !apiKey || !apiSecret) {
+      throw new Error(
+        'Cloudinary is configured as STORAGE_DRIVER but required credentials (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET) are missing or incomplete.',
+      );
+    }
+
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
@@ -38,8 +49,9 @@ export class CloudinaryStorageProvider implements StorageProvider {
         },
         (error, result: UploadApiResponse | undefined) => {
           if (error || !result) {
-            this.logger.error('Cloudinary upload failed', error);
-            return reject(error || new Error('Upload response empty'));
+            const errorMsg = error?.message || 'Upload response empty from Cloudinary';
+            this.logger.error(`Cloudinary upload failed: ${errorMsg}`, error);
+            return reject(new Error(`Cloudinary upload failed: ${errorMsg}`));
           }
 
           resolve({

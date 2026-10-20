@@ -107,4 +107,15 @@ export class MerchantProfileController {
   ) {
     return this.merchantService.getMerchantOffers(merchantId, dto, user);
   }
+
+  @Get(':id/billing')
+  @UseGuards(MerchantOwnershipGuard)
+  @ApiOperation({ summary: 'Get merchant self-serve billing, active plan, and quotas' })
+  @ApiOkResponse({ description: 'Billing summary, subscription status, and resource quotas' })
+  @ApiResponse({ status: 403, description: 'Not authorized to view billing' })
+  @ApiResponse({ status: 404, description: 'Merchant not found' })
+  async getMerchantBilling(@Param('id') id: string) {
+    return this.merchantService.getMerchantBilling(id);
+  }
 }
+

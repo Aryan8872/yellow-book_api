@@ -89,31 +89,69 @@ export class MerchantStaffService {
     return { staff, user: safeUser, pin };
   }
 
-  async getStaff(merchantId: string, user: AuthenticatedUser) {
+  async getStaff(merchantId: string, dto?: { page?: number; limit?: number; search?: string; isActive?: boolean }, user?: AuthenticatedUser) {
+    const page = dto?.page && dto.page > 0 ? Number(dto.page) : 1;
+    const limit = dto?.limit && dto.limit > 0 ? Number(dto.limit) : 20;
+    const skip = (page - 1) * limit;
+
     const where: Prisma.MerchantStaffWhereInput = { merchantId };
-    return this.prisma.merchantStaff.findMany({
-      where,
-      select: {
-        id: true,
-        merchantId: true,
-        userId: true,
-        role: true,
-        permissions: true,
-        deviceId: true,
-        isActive: true,
-        createdAt: true,
-        user: {
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            phone: true,
-            role: true,
-            isActive: true,
+
+    if (dto?.isActive !== undefined) {
+      where.isActive = dto.isActive;
+    }
+
+    if (dto?.search?.trim()) {
+      const q = dto.search.trim();
+      where.user = {
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { email: { contains: q, mode: 'insensitive' } },
+          { phone: { contains: q, mode: 'insensitive' } },
+        ],
+      };
+    }
+
+    const [staff, total] = await Promise.all([
+      this.prisma.merchantStaff.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          merchantId: true,
+          userId: true,
+          role: true,
+          permissions: true,
+          deviceId: true,
+          isActive: true,
+          createdAt: true,
+          user: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              phone: true,
+              role: true,
+              isActive: true,
+            },
           },
         },
+      }),
+      this.prisma.merchantStaff.count({ where }),
+    ]);
+
+    return {
+      data: staff,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+        hasNext: page * limit < total,
+        hasPrevious: page > 1,
       },
-    });
+    };
   }
 
   async updateStaff(staffId: string, merchantId: string, dto: UpdateStaffDto, user: AuthenticatedUser) {

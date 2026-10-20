@@ -7,7 +7,8 @@ import {
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { AppThrottlerGuard } from './common/throttler/app-throttler.guard';
 
 import { RedisModule } from './infrastructure/redis/redis.module';
 import { CacheModule } from './infrastructure/cache/cache.module';
@@ -24,6 +25,9 @@ import { UploadModule } from './modules/upload/upload.module';
 import { MerchantModule } from './modules/merchant/merchant.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { LocationModule } from './modules/location/location.module';
+import { AuditModule } from './modules/audit/audit.module';
+import { PaymentModule } from './modules/payment/payment.module';
 
 // Common
 import { HealthController } from './common/health/health.controller';
@@ -82,22 +86,29 @@ import { ThrottlerStorageRedisService } from './common/throttler/throttler-stora
       inject: [ThrottlerStorageRedisService],
       useFactory: (storage: ThrottlerStorageRedisService) => ({
         throttlers: [
+          // Production default: 1200 req / 60s per user/IP (supports high-frequency SPA dashboards and maps)
           {
             name: 'default',
             ttl: 60000,
-            limit: 100,
+            limit: 1200,
           },
+          // Burst limiter: 250 req / 10s
+          {
+            name: 'short',
+            ttl: 10000,
+            limit: 250,
+          },
+          // Redemption scanning bucket: 120 req / 60s
           {
             name: 'redemption',
             ttl: 60000,
-            limit: 20,
+            limit: 120,
           },
-          // Strict bucket for credential + single-use-token endpoints
-          // (forgot/reset password, email verification).
+          // Strict bucket for credential + single-use-token endpoints: 30 req / 60s
           {
             name: 'auth',
             ttl: 60000,
-            limit: 5,
+            limit: 30,
           },
         ],
         storage,
@@ -117,14 +128,17 @@ import { ThrottlerStorageRedisService } from './common/throttler/throttler-stora
     MerchantModule,
     AdminModule,
     AnalyticsModule,
+    LocationModule,
+    AuditModule,
+    PaymentModule,
   ],
   controllers: [HealthController],
   providers: [
     ThrottlerStorageRedisService,
-    // 1. Throttler Guard (Sliding window rate limit)
+    // 1. Throttler Guard (Sliding window rate limit with user/IP tracking)
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: AppThrottlerGuard,
     },
     // 2. Machine-to-Machine API Key Guard (checks @RequireApiKey routes)
     {

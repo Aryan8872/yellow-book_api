@@ -21,20 +21,34 @@ export class CreateMerchantDto {
   description?: string;
 
   @ApiPropertyOptional({
-    description: 'Logo image URL',
+    description: 'Logo image URL or relative uploaded path',
     example: 'https://example.com/logo.png',
   })
   @IsOptional()
-  @IsUrl()
+  @IsString()
   logoUrl?: string;
 
   @ApiPropertyOptional({
-    description: 'Cover image URL',
+    description: 'Alias for logoUrl',
+  })
+  @IsOptional()
+  @IsString()
+  logoImage?: string;
+
+  @ApiPropertyOptional({
+    description: 'Cover image URL or relative uploaded path',
     example: 'https://example.com/cover.jpg',
   })
   @IsOptional()
-  @IsUrl()
+  @IsString()
   coverUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Alias for coverUrl',
+  })
+  @IsOptional()
+  @IsString()
+  coverImage?: string;
 
   @ApiPropertyOptional({
     description: 'Website URL',
