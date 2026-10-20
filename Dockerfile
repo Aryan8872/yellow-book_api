@@ -1,7 +1,6 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-ENV PATH="/app/node_modules/.bin:${PATH}"
 # Native build tools + openssl (Prisma requires libssl on Alpine)
 RUN apk add --no-cache python3 make g++ openssl
 
