@@ -58,6 +58,12 @@ describe('RedemptionService', () => {
       findMany: jest.fn(),
       count: jest.fn(),
     },
+    subscriptionRecord: {
+      findFirst: jest.fn(),
+    },
+    systemTrialConfig: {
+      findFirst: jest.fn(),
+    },
     merchant: {
       findUnique: jest.fn(),
     },
@@ -149,6 +155,12 @@ describe('RedemptionService', () => {
 
     it('should throw ForbiddenException if subscription not active', async () => {
       const user = { ...activeUser, subscriptionActive: false };
+
+      // Free-tier path: no active subscription record, no user trial config,
+      // and the monthly REDEEMED count already at the 3-voucher cap.
+      mockPrismaService.subscriptionRecord.findFirst.mockResolvedValue(null);
+      mockPrismaService.systemTrialConfig.findFirst.mockResolvedValue(null);
+      mockPrismaService.redemptionSession.count.mockResolvedValue(3);
 
       await expect(
         service.initRedemption('offer-1', user, {} as any),
@@ -701,6 +713,25 @@ describe('RedemptionService', () => {
 
 
   describe('getMyRedemptions', () => {
+    const branchRow = {
+      id: 'branch-1',
+      name: 'Pizza Palace Kathmandu',
+      address: 'Thamel, Kathmandu',
+      district: 'Kathmandu',
+      lat: '27.7103',
+      lng: '85.3222',
+    };
+
+    const merchantRow = {
+      id: 'merchant-1',
+      name: 'Pizza Palace',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      coverUrl: 'https://cdn.example.com/cover.png',
+      contactPhone: '+977-1-1234567',
+      websiteUrl: 'https://pizzapalace.example.com',
+      branches: [branchRow],
+    };
+
     const sessionRow = {
       id: 'session-1',
       offerId: 'offer-1',
@@ -710,10 +741,20 @@ describe('RedemptionService', () => {
       redeemedAt: new Date('2026-01-05T10:00:00.000Z'),
       createdAt: new Date('2026-01-05T09:00:00.000Z'),
       codeExpiresAt: new Date('2026-01-06T09:00:00.000Z'),
+      branch: null,
       offer: {
         id: 'offer-1',
         title: '50% Off Pizza',
-        merchant: { id: 'merchant-1', name: 'Pizza Palace' },
+        description: 'Half off all pizza',
+        terms: 'Valid at dine-in only',
+        estimatedSavingsNpr: 500,
+        originalPriceNpr: 1000,
+        discountPercentage: 50,
+        coverImage: 'https://cdn.example.com/offer-cover.jpg',
+        images: ['https://cdn.example.com/offer-1.jpg'],
+        categoryId: 'cat-1',
+        category: { id: 'cat-1', name: 'Food', slug: 'food', iconUrl: 'https://cdn.example.com/food.png' },
+        merchant: merchantRow,
       },
     };
 
@@ -747,6 +788,45 @@ describe('RedemptionService', () => {
           savingsNpr: 500,
           redeemedAt: '2026-01-05T10:00:00.000Z',
           expiresAt: '2026-01-06T09:00:00.000Z',
+          offer: {
+            id: 'offer-1',
+            title: '50% Off Pizza',
+            description: 'Half off all pizza',
+            terms: 'Valid at dine-in only',
+            estimatedSavingsNpr: 500,
+            originalPriceNpr: 1000,
+            discountPercentage: 50,
+            coverImage: 'https://cdn.example.com/offer-cover.jpg',
+            images: ['https://cdn.example.com/offer-1.jpg'],
+            categoryId: 'cat-1',
+            category: { id: 'cat-1', name: 'Food', slug: 'food', iconUrl: 'https://cdn.example.com/food.png' },
+          },
+          merchant: {
+            id: 'merchant-1',
+            name: 'Pizza Palace',
+            logoUrl: 'https://cdn.example.com/logo.png',
+            coverUrl: 'https://cdn.example.com/cover.png',
+            contactPhone: '+977-1-1234567',
+            websiteUrl: 'https://pizzapalace.example.com',
+            branches: [
+              {
+                id: 'branch-1',
+                name: 'Pizza Palace Kathmandu',
+                address: 'Thamel, Kathmandu',
+                district: 'Kathmandu',
+                lat: 27.7103,
+                lng: 85.3222,
+              },
+            ],
+          },
+          branch: {
+            id: 'branch-1',
+            name: 'Pizza Palace Kathmandu',
+            address: 'Thamel, Kathmandu',
+            district: 'Kathmandu',
+            lat: 27.7103,
+            lng: 85.3222,
+          },
         },
       ]);
     });
