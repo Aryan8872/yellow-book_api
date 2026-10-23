@@ -8,7 +8,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { Prisma, RedemptionStatus, UserRole } from '@prisma/client';
+import { Prisma, RedemptionStatus } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DistributedLockService } from '../../infrastructure/redis/distributed-lock.service';
 import { MetricsService } from '../../infrastructure/metrics/metrics.service';
@@ -17,7 +17,7 @@ import {
   MerchantRedeemDto,
   VerifyQrDto,
 } from './dto/redemption.dto';
-import { AuthenticatedUser } from '../auth/auth.types';
+import { AuthenticatedUser, UserRole } from '../auth/auth.types';
 import { REDEMPTION_CONSTANTS } from './redemption.constants';
 import {
   generateRedemptionCode,
@@ -728,7 +728,8 @@ export class RedemptionService {
 
   /**
    * Cancel an active redemption session
-   * Only staff with redeem permission can cancel sessions for their merchant
+   * Staff with redeem permission can cancel sessions for their merchant
+   * CONSUMER users can cancel their own INIT status sessions
    */
   async cancelRedemption(
     sessionId: string,
@@ -750,14 +751,28 @@ export class RedemptionService {
       throw new NotFoundException('Redemption session not found');
     }
 
-    // Verify staff can act on this merchant
-    await this.assertStaffCanRedeem(user, session.offer.merchantId);
+    // Check authorization based on user role
+    if (user.role === UserRole.CONSUMER) {
+      // CONSUMER can only cancel their own INIT status sessions
+      if (session.userId !== user.id) {
+        throw new ForbiddenException('You can only cancel your own redemption sessions');
+      }
+      // CONSUMER can only cancel INIT status (not PENDING_SYNC or other states)
+      if (session.status !== RedemptionStatus.INIT) {
+        throw new BadRequestException(
+          `Cannot cancel session with status ${session.status}. Only INIT sessions can be cancelled by users.`,
+        );
+      }
+    } else {
+      // Staff with redeem permission can cancel sessions for their merchant
+      await this.assertStaffCanRedeem(user, session.offer.merchantId);
 
-    // Only allow cancellation of INIT or PENDING_SYNC status
-    if (session.status !== RedemptionStatus.INIT && session.status !== RedemptionStatus.PENDING_SYNC) {
-      throw new BadRequestException(
-        `Cannot cancel session with status ${session.status}. Only INIT and PENDING_SYNC can be cancelled.`,
-      );
+      // Staff can cancel INIT or PENDING_SYNC status
+      if (session.status !== RedemptionStatus.INIT && session.status !== RedemptionStatus.PENDING_SYNC) {
+        throw new BadRequestException(
+          `Cannot cancel session with status ${session.status}. Only INIT and PENDING_SYNC can be cancelled.`,
+        );
+      }
     }
 
     // Update status to REJECTED (using existing status enum)

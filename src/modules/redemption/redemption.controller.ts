@@ -138,14 +138,12 @@ export class RedemptionController {
   @Post('redemption/:id/cancel')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
-  @Roles(UserRole.MERCHANT_STAFF, UserRole.MERCHANT_ADMIN, UserRole.ADMIN)
-  @RequireStaffPermission('redeem')
-  @UseGuards(StaffPermissionGuard)
+  @Roles(UserRole.MERCHANT_STAFF, UserRole.MERCHANT_ADMIN, UserRole.ADMIN, UserRole.CONSUMER)
   @ApiOperation({
-    summary: 'Cancel an active redemption session (staff-permission based)',
+    summary: 'Cancel an active redemption session (staff-permission based or user self-cancel)',
   })
   @ApiResponse({ status: 200, description: 'Redemption session cancelled' })
-  @ApiResponse({ status: 403, description: 'Not an active staff member / missing redeem permission' })
+  @ApiResponse({ status: 403, description: 'Not authorized to cancel this redemption' })
   @ApiResponse({ status: 404, description: 'Redemption session not found' })
   @ApiResponse({ status: 400, description: 'Cannot cancel - session already completed or expired' })
   async cancelRedemption(@Param('id') id: string, @Req() req: Request) {
