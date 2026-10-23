@@ -857,6 +857,91 @@ describe('RedemptionService', () => {
 
       expect(result).toEqual([]);
     });
+
+    // ── T-30-01 scoping: offerId filters, but is ALWAYS anded with userId ──
+    it('scopes findMany by offerId AND the JWT userId when offerId is provided', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+
+      await service.getMyRedemptions('user-7', 'offer-1');
+
+      expect(mockPrismaService.redemptionSession.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 'user-7', offerId: 'offer-1' },
+        }),
+      );
+    });
+
+    it('scopes findMany by userId only when offerId is omitted', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([]);
+
+      await service.getMyRedemptions('user-7');
+
+      expect(mockPrismaService.redemptionSession.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 'user-7' },
+        }),
+      );
+    });
+
+    it('enriches a two-branch merchant, mapping lat/lng to numbers and falling back to the first branch', async () => {
+      const secondBranch = {
+        id: 'branch-2',
+        name: 'Pizza Palace Pokhara',
+        address: 'Lakeside, Pokhara',
+        district: 'Kaski',
+        lat: '28.2096',
+        lng: '83.9856',
+      };
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([
+        {
+          ...sessionRow,
+          branch: null,
+          offer: {
+            ...sessionRow.offer,
+            merchant: { ...merchantRow, branches: [branchRow, secondBranch] },
+          },
+        },
+      ]);
+
+      const result = await service.getMyRedemptions('user-7');
+
+      expect(result[0].merchant.branches).toEqual([
+        { id: 'branch-1', name: 'Pizza Palace Kathmandu', address: 'Thamel, Kathmandu', district: 'Kathmandu', lat: 27.7103, lng: 85.3222 },
+        { id: 'branch-2', name: 'Pizza Palace Pokhara', address: 'Lakeside, Pokhara', district: 'Kaski', lat: 28.2096, lng: 83.9856 },
+      ]);
+      // Pitfall 5: session has no branch → fall back to merchant's first branch
+      expect(result[0].branch).toEqual(result[0].merchant.branches[0]);
+    });
+
+    it('returns branch null when neither the session nor the merchant has any branch', async () => {
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([
+        {
+          ...sessionRow,
+          branch: null,
+          offer: { ...sessionRow.offer, merchant: { ...merchantRow, branches: [] } },
+        },
+      ]);
+
+      const result = await service.getMyRedemptions('user-7');
+
+      expect(result[0].branch).toBeNull();
+    });
+
+    it('derives expiresAt from the session codeExpiresAt', async () => {
+      const initRow = {
+        ...sessionRow,
+        status: 'INIT',
+        redeemedAt: null,
+        createdAt: new Date('2026-02-01T08:00:00.000Z'),
+        codeExpiresAt: new Date('2026-02-02T08:30:00.000Z'),
+      };
+      mockPrismaService.redemptionSession.findMany.mockResolvedValue([initRow]);
+
+      const result = await service.getMyRedemptions('user-7');
+
+      expect(result[0].expiresAt).toBe('2026-02-02T08:30:00.000Z');
+      expect(result[0].redeemedAt).toBe('2026-02-01T08:00:00.000Z');
+    });
   });
 
 });
