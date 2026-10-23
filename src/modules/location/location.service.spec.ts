@@ -135,7 +135,7 @@ describe('LocationService', () => {
   describe('reverse', () => {
     it('maps a reverse response to up to 5 {name, lat, lon} localities', async () => {
       const five = Array.from({ length: 7 }, (_, i) =>
-        geoFeature(87.28 + i * 0.01, 26.64 + i * 0.01, {
+        geoFeature(Number((87.28 + i * 0.01).toFixed(2)), Number((26.64 + i * 0.01).toFixed(2)), {
           formatted: `Loc ${i}, Nepal`,
           name: `Loc ${i}`,
         }),

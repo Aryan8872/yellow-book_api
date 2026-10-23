@@ -1,7 +1,7 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ThrottlerGuard } from '@nestjs/throttler';
-import { LocationService } from './location.service';
+import { LocationService, LocationPlaceResult } from './location.service';
 import { LocationSearchDto, LocationResultDto } from './dto/location-search.dto';
 
 @ApiTags('locations')
@@ -15,7 +15,7 @@ export class LocationController {
   @ApiResponse({ status: 200, description: 'Location search results', type: [LocationResultDto] })
   @ApiResponse({ status: 400, description: 'Invalid search query' })
   @ApiResponse({ status: 500, description: 'Failed to search locations' })
-  async searchLocations(@Query() dto: LocationSearchDto): Promise<LocationResultDto[]> {
-    return this.locationService.searchLocations(dto);
+  async searchLocations(@Query() dto: LocationSearchDto): Promise<LocationPlaceResult[]> {
+    return this.locationService.searchPlaces(dto);
   }
 }
