@@ -121,9 +121,9 @@ export class RedemptionController {
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Get current user redemption history and active vouchers' })
   @ApiResponse({ status: 200, description: 'List of redemption sessions for current user' })
-  async getMyRedemptions(@Req() req: Request) {
+  async getMyRedemptions(@Req() req: Request, @Query('offerId') offerId?: string) {
     const user = (req as any).user;
-    return this.redemptionService.getMyRedemptions(user.id);
+    return this.redemptionService.getMyRedemptions(user.id, offerId);
   }
 
   @Get('sessions')

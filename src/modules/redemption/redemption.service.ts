@@ -64,6 +64,32 @@ export interface MerchantRedeemResult {
   merchantName: string;
 }
 
+type BranchBriefRow = {
+  id: string;
+  name: string;
+  address: string;
+  district: string;
+  lat: unknown;
+  lng: unknown;
+};
+
+/**
+ * Normalizes a MerchantBranch row into the mobile-facing branch brief.
+ * lat/lng arrive as Prisma Decimal (JSON-serializes as string) — the map
+ * consumers do arithmetic on them, so they are converted to numbers here.
+ */
+const mapBranchForClient = (b: BranchBriefRow) => ({
+  id: b.id,
+  name: b.name,
+  address: b.address,
+  district: b.district,
+  lat: b.lat == null ? null : Number(b.lat),
+  lng: b.lng == null ? null : Number(b.lng),
+});
+
+const mapSessionBranch = (b: BranchBriefRow | null) =>
+  b ? mapBranchForClient(b) : null;
+
 @Injectable()
 export class RedemptionService {
   private readonly logger = new Logger(RedemptionService.name);
@@ -576,27 +602,50 @@ export class RedemptionService {
     };
   }
 
-  async getMyRedemptions(userId: string) {
+  async getMyRedemptions(userId: string, offerId?: string) {
     const redemptions = await this.prisma.redemptionSession.findMany({
-      where: { userId },
+      // T-30-01 (Elevation of Privilege): offerId is ALWAYS anded with the
+      // JWT user id — a bare offerId lookup must never be trusted.
+      where: { userId, ...(offerId && { offerId }) },
       orderBy: { createdAt: 'desc' },
       include: {
         offer: {
           select: {
             id: true,
             title: true,
+            description: true,
+            terms: true,
+            estimatedSavingsNpr: true,
+            originalPriceNpr: true,
+            discountPercentage: true,
+            coverImage: true,
+            images: true,
+            categoryId: true,
+            category: { select: { id: true, name: true, slug: true, iconUrl: true } },
             merchant: {
               select: {
                 id: true,
                 name: true,
+                logoUrl: true,
+                coverUrl: true,
+                contactPhone: true,
+                websiteUrl: true,
+                branches: {
+                  where: { isActive: true },
+                  select: { id: true, name: true, address: true, district: true, lat: true, lng: true },
+                },
               },
             },
           },
+        },
+        branch: {
+          select: { id: true, name: true, address: true, district: true, lat: true, lng: true },
         },
       },
     });
 
     return redemptions.map((r) => ({
+      // ── Legacy flat keys — preserved exactly (backward compat) ──────────
       id: r.id,
       offerId: r.offerId,
       offerTitle: r.offer.title,
@@ -607,6 +656,33 @@ export class RedemptionService {
       savingsNpr: r.savingsNpr,
       redeemedAt: r.redeemedAt ? r.redeemedAt.toISOString() : r.createdAt.toISOString(),
       expiresAt: r.codeExpiresAt.toISOString(),
+      // ── Enriched nested payloads (RED-03 / RDS-02) ─────────────────────
+      offer: {
+        id: r.offer.id,
+        title: r.offer.title,
+        description: r.offer.description,
+        terms: r.offer.terms,
+        estimatedSavingsNpr: r.offer.estimatedSavingsNpr,
+        originalPriceNpr: r.offer.originalPriceNpr,
+        discountPercentage: r.offer.discountPercentage,
+        coverImage: r.offer.coverImage,
+        images: r.offer.images,
+        categoryId: r.offer.categoryId,
+        category: r.offer.category,
+      },
+      merchant: {
+        id: r.offer.merchant.id,
+        name: r.offer.merchant.name,
+        logoUrl: r.offer.merchant.logoUrl,
+        coverUrl: r.offer.merchant.coverUrl,
+        contactPhone: r.offer.merchant.contactPhone,
+        websiteUrl: r.offer.merchant.websiteUrl,
+        branches: r.offer.merchant.branches.map(mapBranchForClient),
+      },
+      // Branch fallback (Pitfall 5): initRedemption creates sessions without
+      // branchId, so most INIT sessions carry branch == null — fall back to
+      // the merchant's first active branch; null only when both are absent.
+      branch: mapSessionBranch(r.branch ?? r.offer.merchant.branches[0] ?? null),
     }));
   }
 
