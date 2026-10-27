@@ -11,7 +11,7 @@ import type { AuthenticatedUser } from '../../auth/auth.types';
 import { UserRole } from '../../auth/auth.types';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
-import { Roles } from '../../auth/auth.decorators';
+import { Roles, Public } from '../../auth/auth.decorators';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { MerchantOwnershipGuard } from '../guards/merchant-ownership.guard';
 import { MerchantBranchService } from '../services/merchant-branch.service';
@@ -32,6 +32,24 @@ export class MerchantBranchController {
   @ApiOkResponse({ description: 'Paginated list of branches' })
   async listAllBranches(@Query() dto: ListBranchesDto) {
     return this.branchService.listAllBranches(dto);
+  }
+
+  @Public()
+  @Get('branches/near')
+  @ApiOperation({ summary: 'Get branches near a location (public endpoint for mobile app)' })
+  @ApiOkResponse({ description: 'List of branches near the specified location' })
+  async getBranchesNear(
+    @Query('lat') lat: string,
+    @Query('lng') lng: string,
+    @Query('radiusKm') radiusKm?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.branchService.getBranchesNear(
+      parseFloat(lat),
+      parseFloat(lng),
+      radiusKm ? parseFloat(radiusKm) : 5,
+      limit ? parseInt(limit) : 20,
+    );
   }
 
   @Post(':merchantId/branches')

@@ -29,7 +29,13 @@ export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
   @Post()
-  @Roles(UserRole.MERCHANT_ADMIN, UserRole.MERCHANT_STAFF, UserRole.ADMIN)
+  @Roles(
+    UserRole.USER,
+    UserRole.CONSUMER,
+    UserRole.MERCHANT_ADMIN,
+    UserRole.MERCHANT_STAFF,
+    UserRole.ADMIN,
+  )
   @ApiOperation({
     summary: 'Upload a single media file (images, banners, logos)',
     description:

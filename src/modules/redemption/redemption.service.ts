@@ -200,6 +200,7 @@ export class RedemptionService {
         data: {
           userId: user.id,
           offerId,
+          branchId: _dto.branchId ?? undefined,
           code,
           status: RedemptionStatus.INIT,
           savingsNpr: offerRow.estimatedSavingsNpr,
@@ -644,19 +645,35 @@ export class RedemptionService {
       },
     });
 
-    return redemptions.map((r) => ({
-      // ── Legacy flat keys — preserved exactly (backward compat) ──────────
-      id: r.id,
-      offerId: r.offerId,
-      offerTitle: r.offer.title,
-      merchantName: r.offer.merchant.name,
-      status: r.status,
-      redemptionCode: r.code,
-      qrPayload: `offernepal://redeem?code=${r.code}`,
-      savingsNpr: r.savingsNpr,
-      redeemedAt: r.redeemedAt ? r.redeemedAt.toISOString() : r.createdAt.toISOString(),
-      expiresAt: r.codeExpiresAt.toISOString(),
-      // ── Enriched nested payloads (RED-03 / RDS-02) ─────────────────────
+    const now = new Date();
+    const expiredIds: string[] = [];
+
+    const mapped = redemptions.map((r) => {
+      let effectiveStatus = r.status;
+      if (
+        (r.status === RedemptionStatus.INIT ||
+          r.status === RedemptionStatus.PENDING_SYNC) &&
+        r.codeExpiresAt < now
+      ) {
+        effectiveStatus = RedemptionStatus.EXPIRED;
+        expiredIds.push(r.id);
+      }
+
+      return {
+        // ── Legacy flat keys — preserved exactly (backward compat) ──────────
+        id: r.id,
+        offerId: r.offerId,
+        offerTitle: r.offer.title,
+        merchantName: r.offer.merchant.name,
+        status: effectiveStatus,
+        redemptionCode: r.code,
+        qrPayload: `offernepal://redeem?code=${r.code}`,
+        savingsNpr: r.savingsNpr,
+        redeemedAt: r.redeemedAt
+          ? r.redeemedAt.toISOString()
+          : r.createdAt.toISOString(),
+        expiresAt: r.codeExpiresAt.toISOString(),
+        // ── Enriched nested payloads (RED-03 / RDS-02) ─────────────────────
       offer: {
         id: r.offer.id,
         title: r.offer.title,
@@ -683,7 +700,27 @@ export class RedemptionService {
       // branchId, so most INIT sessions carry branch == null — fall back to
       // the merchant's first active branch; null only when both are absent.
       branch: mapSessionBranch(r.branch ?? r.offer.merchant.branches[0] ?? null),
-    }));
+    };
+  });
+
+    if (expiredIds.length > 0) {
+      // Fire-and-forget background synchronization to keep DB status in sync
+      this.prisma.redemptionSession
+        .updateMany({
+          where: {
+            id: { in: expiredIds },
+            status: { in: [RedemptionStatus.INIT, RedemptionStatus.PENDING_SYNC] },
+          },
+          data: { status: RedemptionStatus.EXPIRED },
+        })
+        .catch((err) => {
+          this.logger.warn(
+            `Failed to batch expire redemptions: ${err?.message ?? err}`,
+          );
+        });
+    }
+
+    return mapped;
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -805,58 +842,65 @@ export class RedemptionService {
   /**
    * Cancel an active redemption session
    * Staff with redeem permission can cancel sessions for their merchant
-   * CONSUMER users can cancel their own INIT status sessions
+   * CONSUMER users can cancel their own INIT or PENDING_SYNC sessions
    */
   async cancelRedemption(
     sessionId: string,
     user: AuthenticatedUser,
   ): Promise<{ success: boolean; sessionId: string }> {
-    // Load the session with offer relation
-    const session = await this.prisma.redemptionSession.findUnique({
-      where: { id: sessionId },
-      include: {
-        offer: {
-          select: {
-            merchantId: true,
+    const session = await this.prisma.$transaction(async (tx) => {
+      const currentSession = await tx.redemptionSession.findUnique({
+        where: { id: sessionId },
+        include: {
+          offer: {
+            select: {
+              merchantId: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    if (!session) {
-      throw new NotFoundException('Redemption session not found');
-    }
-
-    // Check authorization based on user role
-    if (user.role === UserRole.CONSUMER) {
-      // CONSUMER can only cancel their own INIT status sessions
-      if (session.userId !== user.id) {
-        throw new ForbiddenException('You can only cancel your own redemption sessions');
+      if (!currentSession) {
+        throw new NotFoundException('Redemption session not found');
       }
-      // CONSUMER can only cancel INIT status (not PENDING_SYNC or other states)
-      if (session.status !== RedemptionStatus.INIT) {
+
+      const isConsumerUser =
+        user.role === UserRole.USER || user.role === UserRole.CONSUMER;
+
+      if (isConsumerUser) {
+        if (currentSession.userId !== user.id) {
+          throw new ForbiddenException(
+            'You can only cancel your own redemption sessions',
+          );
+        }
+      } else {
+        await this.assertStaffCanRedeem(user, currentSession.offer.merchantId);
+      }
+
+      const isCancellableStatus =
+        currentSession.status === RedemptionStatus.INIT ||
+        currentSession.status === RedemptionStatus.PENDING_SYNC;
+      if (!isCancellableStatus) {
         throw new BadRequestException(
-          `Cannot cancel session with status ${session.status}. Only INIT sessions can be cancelled by users.`,
+          `Cannot cancel session with status ${currentSession.status}. Only INIT and PENDING_SYNC sessions can be cancelled.`,
         );
       }
-    } else {
-      // Staff with redeem permission can cancel sessions for their merchant
-      await this.assertStaffCanRedeem(user, session.offer.merchantId);
 
-      // Staff can cancel INIT or PENDING_SYNC status
-      if (session.status !== RedemptionStatus.INIT && session.status !== RedemptionStatus.PENDING_SYNC) {
-        throw new BadRequestException(
-          `Cannot cancel session with status ${session.status}. Only INIT and PENDING_SYNC can be cancelled.`,
+      const updateResult = await tx.redemptionSession.updateMany({
+        where: {
+          id: sessionId,
+          status: currentSession.status,
+          ...(isConsumerUser ? { userId: user.id } : {}),
+        },
+        data: { status: RedemptionStatus.REJECTED },
+      });
+      if (updateResult.count !== 1) {
+        throw new ConflictException(
+          'Redemption status changed; refresh and try again',
         );
       }
-    }
 
-    // Update status to REJECTED (using existing status enum)
-    await this.prisma.redemptionSession.update({
-      where: { id: sessionId },
-      data: {
-        status: RedemptionStatus.REJECTED,
-      },
+      return currentSession;
     });
 
     // Write audit log

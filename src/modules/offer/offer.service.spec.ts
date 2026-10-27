@@ -1,6 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { OfferService } from './offer.service';
+import { QueryOffersDto } from './dto/offer.dto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MetricsService } from '../../infrastructure/metrics/metrics.service';
 import { isOfferScheduleActive } from './offer.utils';
@@ -69,6 +72,9 @@ describe('OfferService', () => {
     merchant: {
       findUnique: jest.fn(),
     },
+    subscriptionRecord: {
+      findFirst: jest.fn(),
+    },
     $transaction: jest.fn(),
   };
 
@@ -99,6 +105,7 @@ describe('OfferService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPrismaService.subscriptionRecord.findFirst.mockResolvedValue(null);
 
     // Prisma's array-form $transaction resolves each element of the input array.
     mockPrismaService.$transaction.mockImplementation(
@@ -175,6 +182,123 @@ describe('OfferService', () => {
       const result = await service.getOffers(query);
 
       expect(result.offers).toHaveLength(1);
+    });
+
+    it('composes category, text, price, and viewport filters', async () => {
+      mockPrismaService.offer.findMany.mockResolvedValue([
+        buildOfferFixture({
+          merchant: {
+            ...buildOfferFixture().merchant,
+            branches: [
+              {
+                id: 'branch-1',
+                name: 'Main',
+                address: 'Kathmandu',
+                district: 'KATHMANDU',
+                lat: 27.7172,
+                lng: 85.324,
+              },
+            ],
+          },
+        }),
+      ]);
+      mockPrismaService.offer.count.mockResolvedValue(1);
+
+      const result = await service.getOffers({
+        category: 'DINING',
+        q: 'pizza',
+        maxPrice: 5000,
+        lat: 27.7172,
+        lng: 85.324,
+        radiusKm: 12,
+        page: 1,
+        limit: 100,
+      } as any);
+
+      const where = mockPrismaService.offer.findMany.mock.calls[0][0].where;
+      const categoryFilter = where.AND.find((filter: any) =>
+        filter.OR?.some((condition: any) => condition.categoryId === 'DINING'),
+      );
+      const searchFilter = where.AND.find((filter: any) =>
+        filter.OR?.some((condition: any) => condition.title?.contains === 'pizza'),
+      );
+      const geographicFilter = where.AND.find(
+        (filter: any) => filter.merchant?.branches?.some?.lat !== undefined,
+      );
+      expect(categoryFilter).toBeDefined();
+      expect(searchFilter).toBeDefined();
+      expect(geographicFilter.merchant.branches.some.lat).toEqual({
+        gte: expect.any(Number),
+        lte: expect.any(Number),
+      });
+      expect(geographicFilter.merchant.branches.some.OR).toEqual([
+        { lng: { gte: expect.any(Number), lte: expect.any(Number) } },
+      ]);
+      expect(where.originalPriceNpr).toEqual({ lte: 5000 });
+      expect(result.offers).toHaveLength(1);
+    });
+
+    it('keeps schedule filtering applied when a viewport radius is used', async () => {
+      const branch = {
+        id: 'branch-1',
+        name: 'Main',
+        address: 'Kathmandu',
+        district: 'KATHMANDU',
+        lat: 27.7172,
+        lng: 85.324,
+      };
+      mockPrismaService.offer.findMany.mockResolvedValue([
+        buildOfferFixture({
+          id: 'expired-offer',
+          validUntil: new Date(Date.now() - 60_000),
+          merchant: { ...buildOfferFixture().merchant, branches: [branch] },
+        }),
+        buildOfferFixture({
+          id: 'active-offer',
+          validFrom: new Date(Date.now() - 60_000),
+          validUntil: new Date(Date.now() + 60_000),
+          merchant: { ...buildOfferFixture().merchant, branches: [branch] },
+        }),
+      ]);
+      mockPrismaService.offer.count.mockResolvedValue(2);
+
+      const result = await service.getOffers({
+        lat: 27.7172,
+        lng: 85.324,
+        radiusKm: 12,
+        page: 1,
+        limit: 100,
+      } as any);
+
+      expect(result.offers.map((offer) => offer.id)).toEqual(['active-offer']);
+    });
+  });
+
+  describe('QueryOffersDto geographic bounds', () => {
+    it('accepts a bounded viewport query with existing filters', async () => {
+      const dto = plainToInstance(QueryOffersDto, {
+        lat: 27.7172,
+        lng: 85.324,
+        radiusKm: 12,
+        category: 'DINING',
+        q: 'pizza',
+        maxPrice: 5000,
+      });
+
+      await expect(validate(dto)).resolves.toHaveLength(0);
+    });
+
+    it('rejects out-of-range coordinates and unbounded radii', async () => {
+      const dto = plainToInstance(QueryOffersDto, {
+        lat: 91,
+        lng: 181,
+        radiusKm: 501,
+      });
+
+      const errors = await validate(dto);
+      expect(errors.map((error) => error.property)).toEqual(
+        expect.arrayContaining(['lat', 'lng', 'radiusKm']),
+      );
     });
   });
 

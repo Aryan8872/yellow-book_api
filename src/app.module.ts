@@ -28,6 +28,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { LocationModule } from './modules/location/location.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { PaymentModule } from './modules/payment/payment.module';
+import { ReviewModule } from './modules/review/review.module';
 
 // Common
 import { HealthController } from './common/health/health.controller';
@@ -131,6 +132,7 @@ import { ThrottlerStorageRedisService } from './common/throttler/throttler-stora
     LocationModule,
     AuditModule,
     PaymentModule,
+    ReviewModule,
   ],
   controllers: [HealthController],
   providers: [

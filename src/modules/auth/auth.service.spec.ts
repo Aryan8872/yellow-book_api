@@ -1,4 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import {
   ConflictException,
   UnauthorizedException,
@@ -15,7 +17,9 @@ import { REDIS_CLIENT } from '../../infrastructure/redis/redis.constants';
 import { NotificationsService } from '../notification/notifications.service';
 import { hashSecureToken } from './auth.utils';
 import { AUTH_CONSTANTS } from './auth.constants';
-import { UserRole as PrismaUserRole } from '@prisma/client';
+import { Prisma, UserRole as PrismaUserRole } from '@prisma/client';
+import { AdminService } from '../admin/admin.service';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 jest.mock('bcrypt');
 
@@ -24,6 +28,8 @@ const buildUserRow = (overrides: Record<string, any> = {}) => ({
   id: 'user-1',
   email: 'test@example.com',
   name: 'Test User',
+  phone: null,
+  phone: null,
   role: PrismaUserRole.USER,
   isVerified: false,
   emailVerified: false,
@@ -46,6 +52,7 @@ describe('AuthService', () => {
     user: {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -91,6 +98,12 @@ describe('AuthService', () => {
         {
           provide: NotificationsService,
           useValue: mockNotificationsService,
+        },
+        {
+          provide: AdminService,
+          useValue: {
+            assignDefaultUserPlan: jest.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();
@@ -249,7 +262,10 @@ describe('AuthService', () => {
 
     it('rejects a merchant-role user with no staff row from the MERCHANT portal', async () => {
       mockPrismaService.user.findUnique.mockResolvedValue(
-        buildUserRow({ role: PrismaUserRole.MERCHANT_ADMIN, merchantStaff: null }),
+        buildUserRow({
+          role: PrismaUserRole.MERCHANT_ADMIN,
+          merchantStaff: null,
+        }),
       );
 
       await expect(
@@ -381,9 +397,9 @@ describe('AuthService', () => {
       mockJwtService.verify.mockReturnValue({ sub: 'user-1' });
       mockRedis.get.mockResolvedValue('original-refresh-token');
 
-      await expect(service.refreshToken('replayed-refresh-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        service.refreshToken('replayed-refresh-token'),
+      ).rejects.toThrow(UnauthorizedException);
       expect(mockRedis.del).toHaveBeenCalledWith(
         expect.stringContaining('user-1'),
       );
@@ -416,7 +432,9 @@ describe('AuthService', () => {
       );
 
       // Errors are logged, not propagated — logout must always succeed.
-      await expect(service.logout('non-existent-user')).resolves.toBeUndefined();
+      await expect(
+        service.logout('non-existent-user'),
+      ).resolves.toBeUndefined();
     });
   });
 
@@ -702,5 +720,149 @@ describe('AuthService', () => {
         hashSecureToken(token),
       );
     });
+  });
+
+  describe('updateProfile phone', () => {
+    it.each([
+      ['9812345678', '+9779812345678'],
+      ['+977 9812345678', '+9779812345678'],
+      ['+977 (981) 234-5678', '+9779812345678'],
+    ])('normalizes %s before persisting', async (input, expectedPhone) => {
+      const user = buildUserRow({ phone: null });
+      mockPrismaService.user.findUnique.mockResolvedValueOnce(user);
+      mockPrismaService.user.findMany.mockResolvedValue([]);
+      mockPrismaService.user.update.mockResolvedValue(
+        buildUserRow({ phone: expectedPhone }),
+      );
+
+      const result = await service.updateProfile('user-1', {
+        phone: input,
+      } as UpdateProfileDto);
+
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'user-1' },
+          data: expect.objectContaining({ phone: expectedPhone }),
+        }),
+      );
+      expect(result.phone).toBe(expectedPhone);
+    });
+
+    it('rejects a phone number already assigned to another user', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValueOnce(
+        buildUserRow({ phone: null }),
+      );
+      mockPrismaService.user.findMany.mockResolvedValue([{ id: 'user-2' }]);
+
+      await expect(
+        service.updateProfile('user-1', {
+          phone: '9812345678',
+        } as UpdateProfileDto),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mockPrismaService.user.findMany).toHaveBeenCalledWith({
+        where: { phone: { in: ['+9779812345678', '9812345678'] } },
+        select: { id: true },
+      });
+      expect(mockPrismaService.user.update).not.toHaveBeenCalled();
+    });
+
+    it('allows the current user to save their existing normalized number', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValueOnce(
+        buildUserRow({ phone: '9812345678' }),
+      );
+      mockPrismaService.user.findMany.mockResolvedValue([{ id: 'user-1' }]);
+      mockPrismaService.user.update.mockResolvedValue(
+        buildUserRow({ phone: '+9779812345678' }),
+      );
+
+      await expect(
+        service.updateProfile('user-1', {
+          phone: '9812345678',
+        } as UpdateProfileDto),
+      ).resolves.toMatchObject({ phone: '+9779812345678' });
+
+      expect(mockPrismaService.user.findUnique).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.user.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves editable profile fields and returns the saved phone', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValueOnce(
+        buildUserRow({ phone: null }),
+      );
+      mockPrismaService.user.findMany.mockResolvedValue([]);
+      mockPrismaService.user.update.mockResolvedValue(
+        buildUserRow({
+          name: 'Updated User',
+          avatarUrl: 'https://example.com/avatar.png',
+          timezone: 'Asia/Kathmandu',
+          phone: '+9779812345678',
+        }),
+      );
+
+      const result = await service.updateProfile('user-1', {
+        name: 'Updated User',
+        avatarUrl: 'https://example.com/avatar.png',
+        timezone: 'Asia/Kathmandu',
+        phone: '9812345678',
+      } as UpdateProfileDto);
+
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            name: 'Updated User',
+            avatarUrl: 'https://example.com/avatar.png',
+            timezone: 'Asia/Kathmandu',
+            phone: '+9779812345678',
+          },
+          select: expect.objectContaining({ phone: true }),
+        }),
+      );
+      expect(result).toMatchObject({
+        name: 'Updated User',
+        avatarUrl: 'https://example.com/avatar.png',
+        timezone: 'Asia/Kathmandu',
+        phone: '+9779812345678',
+      });
+    });
+
+    it('converts a concurrent phone uniqueness violation into a conflict', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValueOnce(
+        buildUserRow({ phone: null }),
+      );
+      mockPrismaService.user.findMany.mockResolvedValue([]);
+      mockPrismaService.user.update.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target: ['phone'] },
+        }),
+      );
+
+      await expect(
+        service.updateProfile('user-1', {
+          phone: '9812345678',
+        } as UpdateProfileDto),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('UpdateProfileDto phone validation', () => {
+    it.each(['9812345678', '+977 9812345678'])(
+      'accepts supported phone format %s',
+      async (phone) => {
+        const dto = plainToInstance(UpdateProfileDto, { phone });
+
+        expect(await validate(dto)).toHaveLength(0);
+      },
+    );
+
+    it.each(['12345', '', null])(
+      'rejects invalid phone value %s',
+      async (phone) => {
+        const dto = plainToInstance(UpdateProfileDto, { phone });
+
+        expect(await validate(dto)).not.toHaveLength(0);
+      },
+    );
   });
 });

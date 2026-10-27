@@ -138,7 +138,13 @@ export class RedemptionController {
   @Post('redemption/:id/cancel')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
-  @Roles(UserRole.MERCHANT_STAFF, UserRole.MERCHANT_ADMIN, UserRole.ADMIN, UserRole.CONSUMER)
+  @Roles(
+    UserRole.USER,
+    UserRole.CONSUMER,
+    UserRole.MERCHANT_STAFF,
+    UserRole.MERCHANT_ADMIN,
+    UserRole.ADMIN,
+  )
   @ApiOperation({
     summary: 'Cancel an active redemption session (staff-permission based or user self-cancel)',
   })

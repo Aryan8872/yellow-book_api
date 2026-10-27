@@ -70,6 +70,7 @@ export interface OfferSummary {
   validUntil: Date | null;
   availabilityJson: any;
   createdAt: Date;
+  branches: MerchantBranchSummary[];
   merchant: MerchantDetailSummary;
 }
 
@@ -109,23 +110,23 @@ export class OfferService {
     // unbounded. This is independent of the admin `isActive` toggle. Applied at
     // the DB level so the paginated `total` stays consistent with the results.
     const now = new Date();
-    const where: Prisma.OfferWhereInput = {
-      isActive: true,
-      AND: [
+    const filters: Prisma.OfferWhereInput[] = [
         { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
         { OR: [{ validUntil: null }, { validUntil: { gte: now } }] },
-      ],
-      ...(query.merchantId && { merchantId: query.merchantId }),
-      ...(query.minDiscount !== undefined && { discountPercentage: { gte: query.minDiscount } }),
-      ...(query.maxPrice !== undefined && { originalPriceNpr: { lte: query.maxPrice } }),
-      ...(query.category && {
+    ];
+
+    if (query.category) {
+      filters.push({
         OR: [
           { categoryId: query.category },
           { category: { slug: { equals: query.category.toLowerCase(), mode: 'insensitive' } } },
           { category: { name: { equals: query.category, mode: 'insensitive' } } },
         ],
-      }),
-      ...(query.q && {
+      });
+    }
+
+    if (query.q) {
+      filters.push({
         OR: [
           { title: { contains: query.q, mode: 'insensitive' } },
           { description: { contains: query.q, mode: 'insensitive' } },
@@ -144,8 +145,11 @@ export class OfferService {
             },
           },
         ],
-      }),
-      ...(locationTerm && {
+      });
+    }
+
+    if (locationTerm) {
+      filters.push({
         merchant: {
           branches: {
             some: {
@@ -160,7 +164,62 @@ export class OfferService {
             },
           },
         },
-      }),
+      });
+    }
+
+    if (
+      query.lat !== undefined &&
+      query.lng !== undefined &&
+      query.radiusKm !== undefined
+    ) {
+      const latitudeDelta = query.radiusKm / 111.32;
+      const longitudeDelta = Math.min(
+        180,
+        query.radiusKm /
+          (111.32 *
+            Math.max(Math.abs(Math.cos((query.lat * Math.PI) / 180)), 1e-6)),
+      );
+      const longitudeMin = query.lng - longitudeDelta;
+      const longitudeMax = query.lng + longitudeDelta;
+      const longitudeRanges =
+        longitudeDelta >= 180
+          ? undefined
+          : longitudeMin < -180
+            ? [
+                { lng: { gte: longitudeMin + 360 } },
+                { lng: { lte: longitudeMax } },
+              ]
+            : longitudeMax > 180
+              ? [
+                  { lng: { gte: longitudeMin } },
+                  { lng: { lte: longitudeMax - 360 } },
+                ]
+              : [{ lng: { gte: longitudeMin, lte: longitudeMax } }];
+
+      filters.push({
+        merchant: {
+          branches: {
+            some: {
+              isActive: true,
+              lat: {
+                gte: Math.max(-90, query.lat - latitudeDelta),
+                lte: Math.min(90, query.lat + latitudeDelta),
+              },
+              ...(longitudeRanges
+                ? { OR: longitudeRanges }
+                : {}),
+            },
+          },
+        },
+      });
+    }
+
+    const where: Prisma.OfferWhereInput = {
+      isActive: true,
+      AND: filters,
+      ...(query.merchantId && { merchantId: query.merchantId }),
+      ...(query.minDiscount !== undefined && { discountPercentage: { gte: query.minDiscount } }),
+      ...(query.maxPrice !== undefined && { originalPriceNpr: { lte: query.maxPrice } }),
     };
 
     // Determine sorting based on query parameter
@@ -199,9 +258,17 @@ export class OfferService {
     let filteredOffers = offers.filter((offer) => isOfferScheduleActive(offer));
 
     // Apply location filtering if coordinates and radius provided
-    if (query.lat !== undefined && query.lng !== undefined && query.radiusKm) {
-      filteredOffers = offers.filter((offer) => {
-        return offer.merchant.branches.some((branch) => {
+    if (
+      query.lat !== undefined &&
+      query.lng !== undefined &&
+      query.radiusKm !== undefined
+    ) {
+      filteredOffers = filteredOffers.filter((offer) => {
+        const branches =
+          offer.branches && offer.branches.length > 0
+            ? offer.branches
+            : offer.merchant.branches;
+        return branches.some((branch) => {
           const distance = haversineDistance(
             query.lat!,
             query.lng!,
@@ -397,6 +464,16 @@ export class OfferService {
       }
     }
 
+    // Validate and prepare branch associations
+    let branchConnect: Prisma.MerchantBranchWhereUniqueInput[] | undefined;
+    if (dto.branchIds && dto.branchIds.length > 0) {
+      const validBranches = await this.prisma.merchantBranch.findMany({
+        where: { id: { in: dto.branchIds }, merchantId },
+        select: { id: true },
+      });
+      branchConnect = validBranches.map((b) => ({ id: b.id }));
+    }
+
     const offer = await this.prisma.offer.create({
       data: {
         merchantId,
@@ -415,6 +492,9 @@ export class OfferService {
         availabilityJson: dto.availabilityJson,
         validFrom: dto.validFrom,
         validUntil: dto.validUntil,
+        ...(branchConnect && branchConnect.length > 0
+          ? { branches: { connect: branchConnect } }
+          : {}),
       },
     });
 
@@ -482,6 +562,19 @@ export class OfferService {
       }
     }
 
+    let branchSet: Prisma.MerchantBranchWhereUniqueInput[] | undefined;
+    if (dto.branchIds !== undefined) {
+      if (dto.branchIds.length > 0) {
+        const validBranches = await this.prisma.merchantBranch.findMany({
+          where: { id: { in: dto.branchIds }, merchantId },
+          select: { id: true },
+        });
+        branchSet = validBranches.map((b) => ({ id: b.id }));
+      } else {
+        branchSet = [];
+      }
+    }
+
     const offer = await this.prisma.offer.update({
       where: { id: offerId },
       data: {
@@ -500,6 +593,11 @@ export class OfferService {
         ...(dto.availabilityJson !== undefined && { availabilityJson: dto.availabilityJson }),
         ...(dto.validFrom !== undefined && { validFrom: dto.validFrom ? new Date(dto.validFrom) : null }),
         ...(dto.validUntil !== undefined && { validUntil: dto.validUntil ? new Date(dto.validUntil) : null }),
+        ...(branchSet !== undefined && {
+          branches: {
+            set: branchSet,
+          },
+        }),
       },
       select: OFFER_SELECT_FIELDS,
     });

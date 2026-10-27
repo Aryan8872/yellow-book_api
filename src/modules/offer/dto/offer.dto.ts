@@ -70,6 +70,8 @@ import { Type } from 'class-transformer';
     @ApiPropertyOptional({ example: 10, description: 'Radius in kilometers' })
     @Type(() => Number)
     @IsNumber()
+    @Min(0.1)
+    @Max(500)
     @IsOptional()
     radiusKm?: number;
 
@@ -231,6 +233,16 @@ export class CreateOfferDto {
   @IsDateString({}, { message: 'Invalid valid until date' })
   @IsOptional()
   validUntil?: string;
+
+  @ApiPropertyOptional({
+    example: ['cmusspcto0003devrmc2l7q84'],
+    description: 'Allocated branch IDs for this offer. If omitted or empty, applies to all merchant branches.',
+    type: [String],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  branchIds?: string[];
 }
 
 export class UpdateOfferDto {
@@ -342,4 +354,14 @@ export class UpdateOfferDto {
   @IsDateString()
   @IsOptional()
   validUntil?: string;
+
+  @ApiPropertyOptional({
+    example: ['cmusspcto0003devrmc2l7q84'],
+    description: 'Allocated branch IDs for this offer. If omitted or empty, applies to all merchant branches.',
+    type: [String],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  branchIds?: string[];
 }

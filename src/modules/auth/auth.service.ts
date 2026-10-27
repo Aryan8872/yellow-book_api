@@ -11,14 +11,18 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
-import { UserRole as PrismaUserRole } from '@prisma/client';
+import { Prisma, UserRole as PrismaUserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../infrastructure/redis/redis.constants';
 import { RegisterDto } from './dto/auth.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UserRole, JwtPayload, SafeUser, AuthTokens } from './auth.types';
-import { AUTH_CONSTANTS, USER_SELECT_FIELDS, USER_SELECT_WITH_PASSWORD } from './auth.constants';
+import {
+  AUTH_CONSTANTS,
+  USER_SELECT_FIELDS,
+  USER_SELECT_WITH_PASSWORD,
+} from './auth.constants';
 import {
   mapPrismaRoleToAppRole,
   normalizeEmail,
@@ -30,7 +34,11 @@ import {
   emailVerificationExpiry,
 } from './auth.utils';
 import { NotificationsService } from '../notification/notifications.service';
-import { ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto } from './dto/auth.dto';
+import {
+  ForgotPasswordDto,
+  ResetPasswordDto,
+  VerifyEmailDto,
+} from './dto/auth.dto';
 import { AdminService } from '../admin/admin.service';
 
 /**
@@ -163,13 +171,16 @@ export class AuthService {
       this.logger.warn(
         `User ${fullUser.email} (role: ${mappedRole}) rejected from admin portal login`,
       );
-      throw new ForbiddenException('Access denied: Administrator privileges required');
+      throw new ForbiddenException(
+        'Access denied: Administrator privileges required',
+      );
     }
 
     // 2. Strict Merchant Portal Guard
     if (portal === 'MERCHANT') {
       const isMerchantRole =
-        mappedRole === UserRole.MERCHANT_ADMIN || mappedRole === UserRole.MERCHANT_STAFF;
+        mappedRole === UserRole.MERCHANT_ADMIN ||
+        mappedRole === UserRole.MERCHANT_STAFF;
 
       if (!isMerchantRole || !fullUser.merchantStaff) {
         this.logger.warn(
@@ -217,7 +228,9 @@ export class AuthService {
   /**
    * Get full user profile with merchant information
    */
-  async getUserProfile(userId: string): Promise<SafeUser & { merchantId?: string }> {
+  async getUserProfile(
+    userId: string,
+  ): Promise<SafeUser & { merchantId?: string }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: USER_SELECT_FIELDS,
@@ -314,7 +327,9 @@ export class AuthService {
   async refreshToken(refreshToken: string): Promise<AuthTokens> {
     const refreshSecret = this.config.get<string>('JWT_REFRESH_SECRET');
     if (!refreshSecret) {
-      throw new UnauthorizedException('Server authentication is not configured');
+      throw new UnauthorizedException(
+        'Server authentication is not configured',
+      );
     }
     try {
       const decoded = this.jwtService.verify<{ sub: string }>(refreshToken, {
@@ -358,7 +373,10 @@ export class AuthService {
     try {
       await this.redis.del(getRefreshTokenKey(userId));
     } catch (err) {
-      this.logger.error(`Failed to delete refresh token from Redis for user ${userId}`, err);
+      this.logger.error(
+        `Failed to delete refresh token from Redis for user ${userId}`,
+        err,
+      );
     }
 
     try {
@@ -370,7 +388,10 @@ export class AuthService {
         },
       });
     } catch (err) {
-      this.logger.error(`Failed to delete refresh token from database for user ${userId}`, err);
+      this.logger.error(
+        `Failed to delete refresh token from database for user ${userId}`,
+        err,
+      );
     }
   }
 
@@ -381,7 +402,10 @@ export class AuthService {
     try {
       await this.redis.del(getRefreshTokenKey(userId));
     } catch (err) {
-      this.logger.error(`Failed to delete refresh token from Redis for user ${userId}`, err);
+      this.logger.error(
+        `Failed to delete refresh token from Redis for user ${userId}`,
+        err,
+      );
     }
 
     try {
@@ -693,7 +717,9 @@ export class AuthService {
     subscription?: { status: string; endsAt: Date | null } | null;
     merchantStaff?: { merchantId: string } | null;
   }): Promise<AuthTokens> {
-    const subscriptionActive = isSubscriptionActive(user.subscription?.status ?? null);
+    const subscriptionActive = isSubscriptionActive(
+      user.subscription?.status ?? null,
+    );
 
     const payload: JwtPayload = {
       sub: user.id,
@@ -729,7 +755,8 @@ export class AuthService {
     // Calculate refresh token expiration date
     const refreshTokenExpiresAt = new Date();
     refreshTokenExpiresAt.setSeconds(
-      refreshTokenExpiresAt.getSeconds() + AUTH_CONSTANTS.REFRESH_TOKEN_EXPIRY_SECONDS,
+      refreshTokenExpiresAt.getSeconds() +
+        AUTH_CONSTANTS.REFRESH_TOKEN_EXPIRY_SECONDS,
     );
 
     // Store refresh token in database as fallback
@@ -774,14 +801,57 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        ...(dto.name && { name: dto.name }),
-        ...(dto.avatarUrl && { avatarUrl: dto.avatarUrl }),
-        ...(dto.timezone && { timezone: dto.timezone }),
-      },
-      select: { id: true, email: true, name: true, avatarUrl: true, timezone: true },
-    });
+    const data: Prisma.UserUpdateInput = {
+      ...(dto.name && { name: dto.name }),
+      ...(dto.avatarUrl && { avatarUrl: dto.avatarUrl }),
+      ...(dto.timezone && { timezone: dto.timezone }),
+    };
+
+    if (dto.phone !== undefined) {
+      const phone = this.normalizeProfilePhone(dto.phone);
+      if (phone !== user.phone) {
+        const localPhone = phone.slice(4);
+        const phoneOwners = await this.prisma.user.findMany({
+          where: { phone: { in: [phone, localPhone] } },
+          select: { id: true },
+        });
+        if (phoneOwners.some((owner) => owner.id !== userId)) {
+          throw new ConflictException('Phone number is already in use');
+        }
+      }
+      data.phone = phone;
+    }
+
+    try {
+      const updatedUser = await this.prisma.user.update({
+        where: { id: userId },
+        data,
+        select: USER_SELECT_FIELDS,
+      });
+      return this.toSafeUser(updatedUser);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('Phone number is already in use');
+      }
+      throw error;
+    }
+  }
+
+  private normalizeProfilePhone(phone: string): string {
+    const compactPhone = phone.replace(/[\s()-]/g, '');
+    const localPhone = compactPhone.startsWith('+977')
+      ? compactPhone.slice(4)
+      : compactPhone;
+
+    if (!/^9\d{9}$/.test(localPhone)) {
+      throw new BadRequestException(
+        'Phone number must be a valid Nepali mobile number',
+      );
+    }
+
+    return `+977${localPhone}`;
   }
 }

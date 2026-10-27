@@ -20,9 +20,18 @@ export class CategoryService {
     const categories = await this.prisma.category.findMany({
       where,
       orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+      include: {
+        _count: {
+          select: { offers: { where: { isActive: true } } },
+        },
+      },
     });
 
-    return categories;
+    // Map to include offerCount in response
+    return categories.map(category => ({
+      ...category,
+      offerCount: category._count.offers,
+    }));
   }
 
   /**

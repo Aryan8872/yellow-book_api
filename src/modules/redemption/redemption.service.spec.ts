@@ -12,6 +12,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DistributedLockService } from '../../infrastructure/redis/distributed-lock.service';
 import { MetricsService } from '../../infrastructure/metrics/metrics.service';
 import { UserRole, RedemptionStatus } from '@prisma/client';
+import { UserRole as AuthUserRole } from '../auth/auth.types';
 
 jest.mock('bcrypt');
 
@@ -55,6 +56,7 @@ describe('RedemptionService', () => {
       findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
     },
@@ -110,6 +112,9 @@ describe('RedemptionService', () => {
     mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
       callback(mockPrismaService),
     );
+    mockPrismaService.redemptionSession.updateMany.mockResolvedValue({
+      count: 1,
+    });
 
     // Distributed lock passthrough: execute the guarded callback directly.
     mockLockService.runWithLock.mockImplementation(
@@ -487,7 +492,6 @@ describe('RedemptionService', () => {
     });
   });
 
-
   describe('renderQrImage', () => {
     it('should return a PNG data URL for a valid payload', async () => {
       const result = await service.renderQrImage(
@@ -503,8 +507,6 @@ describe('RedemptionService', () => {
       );
     });
   });
-
-
 
   describe('listRedemptions', () => {
     it('passes skip/take to Prisma as NUMBERS (regression guard for the string-take 500)', async () => {
@@ -710,7 +712,6 @@ describe('RedemptionService', () => {
       expect(result.data).toEqual(rows);
     });
   });
-
 
   describe('getMyRedemptions', () => {
     const branchRow = {
@@ -944,4 +945,90 @@ describe('RedemptionService', () => {
     });
   });
 
+  describe('cancelRedemption consumer policy', () => {
+    const consumer = {
+      id: 'user-1',
+      email: 'consumer@example.com',
+      role: AuthUserRole.CONSUMER,
+    } as any;
+
+    const sessionFor = (status: RedemptionStatus, userId = 'user-1') => ({
+      id: 'session-1',
+      userId,
+      status,
+      offer: { merchantId: 'merchant-1' },
+    });
+
+    it.each([RedemptionStatus.INIT, RedemptionStatus.PENDING_SYNC])(
+      'allows the owner to cancel %s',
+      async (status) => {
+        mockPrismaService.redemptionSession.findUnique.mockResolvedValue(
+          sessionFor(status),
+        );
+
+        await expect(
+          service.cancelRedemption('session-1', consumer),
+        ).resolves.toEqual({ success: true, sessionId: 'session-1' });
+
+        const mutation =
+          mockPrismaService.redemptionSession.update.mock.calls[0]?.[0] ??
+          mockPrismaService.redemptionSession.updateMany.mock.calls[0]?.[0];
+        expect(mutation).toEqual(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              id: 'session-1',
+              status,
+              userId: 'user-1',
+            }),
+            data: { status: RedemptionStatus.REJECTED },
+          }),
+        );
+      },
+    );
+
+    it('rejects another user without mutating the redemption', async () => {
+      mockPrismaService.redemptionSession.findUnique.mockResolvedValue(
+        sessionFor(RedemptionStatus.INIT, 'user-2'),
+      );
+
+      await expect(
+        service.cancelRedemption('session-1', consumer),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockPrismaService.redemptionSession.update).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.redemptionSession.updateMany,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('rejects a concurrent status change without reporting cancellation', async () => {
+      mockPrismaService.redemptionSession.findUnique.mockResolvedValue(
+        sessionFor(RedemptionStatus.INIT),
+      );
+      mockPrismaService.redemptionSession.updateMany.mockResolvedValue({
+        count: 0,
+      });
+
+      await expect(
+        service.cancelRedemption('session-1', consumer),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it.each([
+      RedemptionStatus.REDEEMED,
+      RedemptionStatus.REJECTED,
+      RedemptionStatus.EXPIRED,
+    ])('rejects terminal status %s without mutation', async (status) => {
+      mockPrismaService.redemptionSession.findUnique.mockResolvedValue(
+        sessionFor(status),
+      );
+
+      await expect(
+        service.cancelRedemption('session-1', consumer),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mockPrismaService.redemptionSession.update).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.redemptionSession.updateMany,
+      ).not.toHaveBeenCalled();
+    });
+  });
 });

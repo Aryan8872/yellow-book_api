@@ -37,6 +37,14 @@ export class RedeemInitDto {
   @IsString()
   @IsOptional()
   deviceInfo?: string;
+
+  @ApiPropertyOptional({
+    example: 'branch_123',
+    description: 'Selected merchant branch ID for redemption location verification',
+  })
+  @IsString()
+  @IsOptional()
+  branchId?: string;
 }
 
 export class MerchantRedeemDto {

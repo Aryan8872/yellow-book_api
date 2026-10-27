@@ -161,6 +161,9 @@ model User {
   merchantStaff    MerchantStaff?
   auditLogs        AuditLog[]          @relation("AuditActor")
   favourites       UserFavourite[]
+  reviews          Review[]
+  helpfulVotes     ReviewHelpfulVote[]
+  reports          ReviewReport[]
 
   @@index([email])
   @@index([phone])
@@ -394,6 +397,7 @@ model Merchant {
   payouts   Payout[]
   auditLogs AuditLog[]       @relation("MerchantAudit")
   subscriptions SubscriptionRecord[]
+  reviews   Review[]
 
   @@index([status])
   @@map("merchants")
@@ -415,6 +419,7 @@ model MerchantBranch {
   // Relations
   merchant    Merchant            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   redemptions RedemptionSession[]
+  offers      Offer[]             @relation("OfferBranches")
 
   @@index([merchantId])
   // PostGIS or application-level geospatial queries on lat/lng
@@ -474,8 +479,10 @@ model Offer {
   // Relations
   merchant    Merchant            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   category    Category            @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  branches    MerchantBranch[]    @relation("OfferBranches")
   redemptions RedemptionSession[]
   favourites  UserFavourite[]
+  reviews     Review[]
 
   @@index([merchantId])
   @@index([categoryId])
@@ -602,4 +609,81 @@ model FraudFlag {
   @@index([severity])
   @@index([resolvedAt])
   @@map("fraud_flags")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REVIEWS & RATINGS MODULE
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Review {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  offerId         String?  @map("offer_id")
+  merchantId      String?  @map("merchant_id")
+  rating          Int      // 1-5 scale
+  title           String?
+  comment         String   @db.Text
+  photos          String[] @default([])
+  isVerified      Boolean  @default(false) @map("is_verified") // Verified purchase
+  isFeatured      Boolean  @default(false) @map("is_featured") // Staff-pinned
+  helpfulCount    Int      @default(0) @map("helpful_count") // Cache of helpful votes
+  reportCount     Int      @default(0) @map("report_count") // Cache of reports
+  status          String   @default("PUBLISHED") // PUBLISHED | PENDING | HIDDEN | DELETED
+  moderationNote  String?  @map("moderation_note")
+  moderatedAt     DateTime? @map("moderated_at")
+  moderatedBy     String?  @map("moderated_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  offer        Offer?               @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  merchant     Merchant?            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  helpfulVotes ReviewHelpfulVote[]
+  reports      ReviewReport[]
+
+  @@unique([userId, offerId])
+  @@unique([userId, merchantId])
+  @@index([offerId, status])
+  @@index([merchantId, status])
+  @@index([rating])
+  @@index([createdAt])
+  @@index([helpfulCount])
+  @@map("reviews")
+}
+
+model ReviewHelpfulVote {
+  id        String   @id @default(cuid())
+  reviewId  String   @map("review_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, userId])
+  @@index([reviewId])
+  @@index([userId])
+  @@map("review_helpful_votes")
+}
+
+model ReviewReport {
+  id        String   @id @default(cuid())
+  reviewId  String   @map("review_id")
+  userId    String   @map("user_id")
+  reason    String // 'SPAM' | 'OFFENSIVE' | 'INACCURATE' | 'OTHER'
+  comment   String?
+  status    String   @default("PENDING") // PENDING | RESOLVED | DISMISSED
+  resolvedBy String? @map("resolved_by")
+  resolvedAt DateTime? @map("resolved_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId, status])
+  @@index([userId])
+  @@map("review_reports")
 }

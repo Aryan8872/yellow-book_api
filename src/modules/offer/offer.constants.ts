@@ -28,6 +28,17 @@ export const OFFER_SELECT_FIELDS = {
   validUntil: true,
   availabilityJson: true,
   createdAt: true,
+  branches: {
+    where: { isActive: true },
+    select: {
+      id: true,
+      name: true,
+      address: true,
+      district: true,
+      lat: true,
+      lng: true,
+    },
+  },
   merchant: {
     select: {
       id: true,

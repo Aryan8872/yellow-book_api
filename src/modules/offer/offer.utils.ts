@@ -107,6 +107,18 @@ export function mapOfferToSummary(
     validUntil: offer.validUntil,
     availabilityJson: offer.availabilityJson,
     createdAt: offer.createdAt,
+    branches: (
+      (offer.branches && offer.branches.length > 0)
+        ? offer.branches
+        : (offer.merchant.branches || [])
+    ).map((b) => ({
+      id: b.id,
+      name: b.name,
+      address: b.address,
+      district: b.district,
+      lat: Number(b.lat),
+      lng: Number(b.lng),
+    })),
     merchant: {
       id: offer.merchant.id,
       name: offer.merchant.name,
@@ -116,7 +128,11 @@ export function mapOfferToSummary(
       websiteUrl: offer.merchant.websiteUrl,
       contactEmail: offer.merchant.contactEmail,
       contactPhone: offer.merchant.contactPhone,
-      branches: (offer.merchant.branches || []).map((b) => ({
+      branches: (
+        (offer.branches && offer.branches.length > 0)
+          ? offer.branches
+          : (offer.merchant.branches || [])
+      ).map((b) => ({
         id: b.id,
         name: b.name,
         address: b.address,

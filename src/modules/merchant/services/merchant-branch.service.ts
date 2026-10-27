@@ -155,6 +155,56 @@ export class MerchantBranchService {
     };
   }
 
+  async getBranchesNear(lat: number, lng: number, radiusKm: number = 5, limit: number = 20) {
+    // Fetch all active branches with coordinates
+    const branches = await this.prisma.merchantBranch.findMany({
+      where: {
+        isActive: true,
+      },
+      include: {
+        merchant: {
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+          },
+        },
+      },
+      take: 100, // Fetch more and filter by distance
+    });
+
+    // Calculate distance using Haversine formula
+    const branchesWithDistance = branches
+      .filter((branch) => branch.lat !== null && branch.lng !== null)
+      .map((branch) => {
+        const distance = this.haversineDistance(lat, lng, Number(branch.lat), Number(branch.lng));
+        return { ...branch, distance };
+      })
+      .filter((branch) => branch.distance <= radiusKm)
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, limit);
+
+    return {
+      data: branchesWithDistance,
+      count: branchesWithDistance.length,
+    };
+  }
+
+  private haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371; // Earth's radius in km
+    const dLat = this.toRad(lat2 - lat1);
+    const dLon = this.toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(this.toRad(lat1)) * Math.cos(this.toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  private toRad(degrees: number): number {
+    return (degrees * Math.PI) / 180;
+  }
+
   async updateBranch(branchId: string, merchantId: string, dto: UpdateBranchDto, user: AuthenticatedUser) {
     const branch = await this.prisma.merchantBranch.findUnique({
       where: { id: branchId },
